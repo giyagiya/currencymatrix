@@ -1,0 +1,100 @@
+<div class="card">
+  <h2 class="sech">👤 Users &amp; login</h2>
+  <div class="gridwrap"><table class="s ulist">
+    <tr><th class="l">Name</th><th class="l">Role</th><th class="l">Pages allowed</th><th class="l">New PIN</th><th></th></tr>
+    @for (u of S().users || []; track u.id) {
+      <tr>
+        <td class="l"><b>{{ u.name }}</b></td>
+        <td class="l"><select [ngModel]="u.role" (ngModelChange)="userRole(u, $event)"><option value="super">Super admin</option><option value="master">Master</option><option value="user">User</option></select></td>
+        <td class="l">@if (u.role === 'super') { All pages + Setup } @else {
+          <div class="upg">@for (p of PAGES; track p[0]) { <label class="ck"><input type="checkbox" [checked]="u.pages.includes(p[0])" (change)="userPage(u, p[0], $any($event.target).checked)"> {{ p[1] }}</label> }</div> }</td>
+        <td class="l nowrap"><input type="password" inputmode="numeric" [(ngModel)]="upin[u.id]" placeholder="new PIN" class="w110"><button class="sm" (click)="userPin(u)">Change</button></td>
+        <td>@if (u.name !== auth.user()?.name) { <button class="sm" (click)="delUser(u)">🗑</button> }</td>
+      </tr>
+    }
+  </table></div>
+  <h3>＋ Add login</h3>
+  <div class="grid3">
+    <div><label>Name</label><input [(ngModel)]="uf.name" class="up" placeholder="Name"></div>
+    <div><label>Role</label><select [(ngModel)]="uf.role" (ngModelChange)="ufRole()"><option value="user">User</option><option value="master">Master</option><option value="super">Super admin</option></select></div>
+    <div><label>PIN (4–6 numbers)</label><input [(ngModel)]="uf.pin" type="password" inputmode="numeric" placeholder="••••"></div>
+  </div>
+  @if (uf.role !== 'super') {
+    <label>Pages this login can open</label>
+    <div class="upg">@for (p of PAGES; track p[0]) { <label class="ck"><input type="checkbox" [checked]="uf.pages.includes(p[0])" (change)="togglePage(uf.pages, p[0])"> {{ p[1] }}</label> }</div>
+  }
+  <div class="acts"><button class="pr" (click)="addUser()">💾 Save login</button></div>
+  <div class="delpw">
+    <h3>🔒 Delete password <span class="rt" [class.rdone]="S().hasDelPin" [class.rpend]="!S().hasDelPin">{{ S().hasDelPin ? 'SET' : 'NOT SET' }}</span></h3>
+    <div class="hint">Master and User must type this 4-number password to delete any bill, voucher or payment. Super admin deletes without it.</div>
+    <div class="row"><input [(ngModel)]="dpin" type="password" inputmode="numeric" maxlength="4" placeholder="4 numbers" class="w160"><button class="pr" (click)="saveDelPin()">{{ S().hasDelPin ? 'Change' : 'Save' }}</button></div>
+  </div>
+  <div class="hint">Profit, capital and balance figures show only to logins that have the ⚖️ Balance page.</div>
+</div>
+
+<div class="two">
+  <div>
+    <div class="card">
+      <h2 class="sech">Currencies</h2>
+      <label>Base currency</label>
+      <select [ngModel]="S().base" (ngModelChange)="setBase($event)">@for (c of E().allCurs().concat(S().currencies.includes('INR') || S().base === 'INR' ? [] : ['INR']); track c) { <option [value]="c">{{ c }}</option> }</select>
+      <label>Trading currencies</label>
+      <div class="chips">@for (c of S().currencies; track c) { <span class="tag big">{{ c }} @if (!usedCur(c)) { <a (click)="delCur(c)" class="x">✕</a> }</span> }</div>
+      <div class="row"><input [(ngModel)]="newCur" class="up" placeholder="e.g. EUR" (keydown.enter)="addCur()"><button (click)="addCur()">＋ Add currency</button></div>
+    </div>
+    <div class="card">
+      <h2 class="sech">Stock for each currency</h2>
+      @for (c of S().currencies; track c) {
+        <div class="row"><span class="w60"><b>{{ c }}</b></span><input [ngModel]="S().stockOf[c] || ''" (change)="setStock(c, $any($event.target).value)" class="up" placeholder="e.g. {{ c }}.COM"></div>
+      }
+    </div>
+    <div class="card">
+      <h2 class="sech">🏦 Banks</h2>
+      @for (b of S().banks; track b.name) {
+        <div class="it"><span><b>{{ b.name }}</b> <span class="sub">{{ b.acno }} {{ b.ifsc }}</span></span>
+          <span class="row"><input class="w90" [(ngModel)]="b.comm" inputmode="decimal" title="Commission per lakh"><button class="sm" (click)="saveBank(b)">Save</button><button class="sm" (click)="delBank(b.name)">🗑</button></span></div>
+      }
+      <div class="grid4">
+        <div><label>Bank name</label><input [(ngModel)]="nb.name" class="up"></div><div><label>A/c no.</label><input [(ngModel)]="nb.acno"></div>
+        <div><label>IFSC</label><input [(ngModel)]="nb.ifsc" class="up"></div><div><label>Comm./lakh</label><input [(ngModel)]="nb.comm" inputmode="decimal"></div>
+      </div>
+      <div class="acts"><button (click)="saveBank()">＋ Add bank</button></div>
+    </div>
+    <div class="card">
+      <h2 class="sech">🏠 Delivery dealers</h2>
+      @for (d of S().dealers; track d.name) {
+        <div class="it"><b>{{ d.name }}</b><span class="row"><input class="w90" [(ngModel)]="d.comm" inputmode="decimal" title="Commission per lakh"><button class="sm" (click)="saveDealer(d)">Save</button><button class="sm" (click)="delDealer(d.name)">🗑</button></span></div>
+      }
+      <div class="row"><input [(ngModel)]="nd.name" class="up" placeholder="Dealer name"><input [(ngModel)]="nd.comm" class="w90" inputmode="decimal" placeholder="Comm."><button (click)="saveDealer()">＋ Add</button></div>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <h2 class="sech">Accounts</h2>
+      <div class="hint">New names are added by themselves when you save. Set the type so Cash, Bank and Expenses show on the right lines.</div>
+      <div class="list">
+        @for (a of accounts(); track a) {
+          <div class="it">
+            @if (ren === a) {
+              <input [(ngModel)]="renVal" class="up" (keydown.enter)="rename()"><span class="row"><button class="sm" (click)="rename()">Save</button><button class="sm" (click)="ren = null">Cancel</button></span>
+            } @else {
+              <span><b>{{ a }}</b> <span class="sub">{{ count(a) }} postings</span></span>
+              <span class="row">
+                <select [ngModel]="E().accType(a)" (ngModelChange)="setType(a, $event)">@for (t of typeKeys; track t) { <option [value]="t">{{ TYPES[t] }}</option> }</select>
+                <button class="sm" (click)="ren = a; renVal = a">Rename</button>
+                @if (!count(a)) { <button class="sm" (click)="delAcc(a)">🗑</button> }
+              </span>
+            }
+          </div>
+        }
+      </div>
+      <div class="row"><input [(ngModel)]="newAcc" class="up" placeholder="New name"><select [(ngModel)]="newAccType">@for (t of typeKeys; track t) { <option [value]="t">{{ TYPES[t] }}</option> }</select><button (click)="addAcc()">＋ Add</button></div>
+    </div>
+    <div class="card">
+      <h2 class="sech">💾 Backup</h2>
+      <div class="hint">Download all bills and vouchers as a file. Import replaces everything with the file (you can also import the backup from the old single-file Remit app).</div>
+      <div class="acts"><button class="pr" (click)="exportBook()">⬇️ Download backup</button>
+        <label class="btn">⬆️ Import backup<input type="file" accept=".json,application/json" (change)="importBook($event)" hidden></label></div>
+    </div>
+  </div>
+</div>

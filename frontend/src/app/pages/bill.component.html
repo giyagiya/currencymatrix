@@ -1,0 +1,172 @@
+<app-summary />
+
+@if (auth.canPage('bill')) {
+<div class="card newentry">
+  <h2 class="sech">{{ editId ? '✏️ Edit bill' : '➕ New bill' }} <small>Bill {{ no }}</small></h2>
+  <div class="bh">
+    <div class="bh-f"><label>Date</label><input type="date" [(ngModel)]="date"></div>
+    <div class="bh-f"><label>Bill No.</label><input [(ngModel)]="no" inputmode="numeric"></div>
+  </div>
+
+  <div class="entry" [class.sale]="L.side === 's'">
+    <div class="f f-party"><label>Party</label>
+      <input id="l-desc" [(ngModel)]="L.desc" (blur)="partyPhone()" list="dl-acc" class="up" placeholder="Name" autocomplete="off"></div>
+    <div class="f"><label>WhatsApp no.</label><input [(ngModel)]="L.phone" inputmode="tel" placeholder="optional"></div>
+    <div class="f f-type"><label>Type</label>
+      <div class="seg">
+        <button type="button" [class.on]="L.side === 'p'" class="pbtn" (click)="L.side = 'p'">Purchase <small>(we buy)</small></button>
+        <button type="button" [class.on]="L.side === 's'" class="sbtn" (click)="L.side = 's'">Sale <small>(we sell)</small></button>
+      </div></div>
+    <div class="f"><label>Currency</label>
+      <select [(ngModel)]="L.cur" (ngModelChange)="curChanged()">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></div>
+    <div class="f"><label>Base currency</label>
+      <select [(ngModel)]="L.base">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></div>
+    <div class="f"><label>Quantity</label><input [(ngModel)]="L.qty" inputmode="decimal" placeholder="0"></div>
+    @if (invCur(L.cur)) {
+      <div class="f"><label>Rate (÷ – 1 {{ L.base }} = ? {{ L.cur }})</label><input [(ngModel)]="L.inv" (ngModelChange)="invChanged()" inputmode="decimal" placeholder="0.00"></div>
+    } @else {
+      <div class="f"><label>Rate (1 {{ L.cur }} = {{ L.base }})</label>
+        <input [(ngModel)]="L.rate" inputmode="decimal" [placeholder]="lastRate(L) ? 'Last: ' + lastRate(L) : '0.00'" (keydown.enter)="addLine()"></div>
+    }
+    <div class="f"><label>Stock</label><input [(ngModel)]="L.stock" class="up" placeholder="e.g. SGD.COM"></div>
+    <div class="f f-amt"><label>Amount ({{ L.base }})</label><div class="amt" [class.sale]="L.side === 's'">{{ m(lineAmt(L)) }}</div></div>
+
+    <div class="f f-wide"><label>{{ L.side === 'p' ? 'Pay out by' : 'Receive by' }}</label>
+      <div class="seg">@for (md of modes; track md) {
+        <button type="button" [class.on]="L.mode === md" (click)="L.mode = md">{{ MIC[md] }} {{ PMODES[md] }}</button> }</div></div>
+    @if (L.mode === 'bank') {
+      <div class="f"><label>Bank</label>
+        <select [(ngModel)]="L.bank"><option value="BANK">BANK</option>
+          @for (b of S().banks; track b.name) { <option [value]="b.name">{{ b.name }}</option> }
+          <option value="__new">➕ New bank…</option></select></div>
+      @if (L.bank === '__new') {
+        <div class="f"><label>Bank name</label><input [(ngModel)]="L.nbName" class="up"></div>
+        <div class="f"><label>A/c no.</label><input [(ngModel)]="L.nbAc"></div>
+        <div class="f"><label>IFSC</label><input [(ngModel)]="L.nbIfsc" class="up"></div>
+      }
+    }
+    @if (L.mode === 'home') {
+      <div class="f"><label>Delivery dealer</label>
+        <select [(ngModel)]="L.dealer"><option value="">No dealer</option>
+          @for (d of S().dealers; track d.name) { <option [value]="d.name">{{ d.name }}</option> }
+          <option value="__new">➕ New dealer…</option></select></div>
+      @if (L.dealer === '__new') { <div class="f"><label>Dealer name</label><input [(ngModel)]="L.ndName" class="up"></div> }
+    }
+    <div class="f"><label>Commission per lakh</label><input [(ngModel)]="L.comm" inputmode="decimal" placeholder="0">
+      <div class="hint">= {{ L.base }} {{ m(lineComm(L)) }}</div></div>
+    <div class="f f-add">
+      @if (LE >= 0) { <button type="button" (click)="cancelEdit()">Cancel</button> }
+      <button type="button" class="pr" (click)="addLine()">{{ LE >= 0 ? '✓ Update line' : '＋ Add' }}</button>
+    </div>
+  </div>
+
+  @if (lines.length) {
+    <div class="gridwrap"><table class="s lines">
+      <tr><th>#</th><th class="l">Party</th><th class="l">Type</th><th class="l">Currency</th><th>Qty</th><th>Rate</th><th>Amount</th><th class="l">Mode</th><th>Comm.</th><th></th></tr>
+      @for (l of lines; track $index; let i = $index) {
+        <tr [class.editing]="LE === i">
+          <td>{{ i + 1 }}</td><td class="l"><b>{{ l.desc }}</b></td>
+          <td class="l"><span class="rt" [class.rbp]="l.side === 'p'" [class.rbs]="l.side === 's'">{{ l.side === 'p' ? 'Purchase' : 'Sale' }}</span></td>
+          <td class="l">{{ l.cur }}</td><td>{{ m(num(l.qty)) }}</td><td>{{ E().rateShort(l.cur, num(l.rate)) }}</td>
+          <td><b>{{ m(lineAmt(l)) }}</b></td><td class="l">{{ MIC[l.mode] }} {{ PMODES[l.mode] }}</td><td>{{ num(l.comm) ? m(lineComm(l)) : '' }}</td>
+          <td class="c nowrap"><button class="sm" (click)="editLine(i)">✏️</button><button class="sm" (click)="removeLine(i)">✕</button></td>
+        </tr>
+      }
+    </table></div>
+  } @else { <div class="hint center">Add lines above. Press <b>Enter</b> on Rate to add the line.</div> }
+
+  @if (totals(); as t) {
+    <div class="tots">
+      <div><span>Purchase total</span><b class="neg">{{ m(t.p) }}</b></div>
+      <div><span>Sale total</span><b class="pos">{{ m(t.s) }}</b></div>
+      <div><span>Difference</span><b>{{ m(t.diff) }}</b></div>
+      <div><span>Commission</span><b class="neg">− {{ m(t.c) }}</b></div>
+      <div class="hl"><span>Net</span><b>{{ m(t.net) }}</b></div>
+    </div>
+  }
+  <div class="acts">
+    <button class="pr" (click)="saveBill()" [disabled]="store.busy()">💾 {{ editId ? 'Update bill' : 'Save bill' }}</button>
+    <button (click)="newBill()">New bill</button>
+  </div>
+</div>
+}
+
+@if (auth.canPage('pay')) {
+<div class="card">
+  <div class="fhd"><h2 class="sech">💳 Bills &amp; payments</h2>
+    <div class="seg bf">
+      <button [class.on]="BF === 'all'" (click)="BF = 'all'">All</button>
+      <button [class.on]="BF === 'pending'" (click)="BF = 'pending'">Pending{{ pendingCount() ? ' (' + pendingCount() + ')' : '' }}</button>
+      <button [class.on]="BF === 'paid'" (click)="BF = 'paid'">Settled</button>
+    </div></div>
+  <input [(ngModel)]="q" placeholder="Search bill no., name, stock, currency" class="search">
+  @for (b of shown(); track b.id) {
+    <div class="bc">
+      <div class="bc-h">
+        <b>Bill {{ b.no }}</b> <span class="sub">· {{ dmy(b.date) }}</span>
+        @if (E().billState(b); as st) {
+          <span class="chip" [class.done]="st.paid === st.n" [class.pend]="st.paid < st.n">{{ st.paid === st.n ? '✓ All settled' : (st.n - st.paid) + ' pending' }}</span>
+        }
+        @if (billSums(b); as s) { <span class="sub">Diff {{ m(s.diff) }}{{ s.comm ? ' · Comm ' + m(s.comm) : '' }} · <b>Net {{ m(s.net) }}</b></span> }
+        <span class="flex"></span>
+        @if (auth.canPage('bill')) { <button class="sm" (click)="openBill(b)">✏️ Edit</button> }
+        <button class="sm danger" (click)="delBill(b)">🗑</button>
+      </div>
+      @for (r of b.rows; track $index; let i = $index) {
+        <div class="bl">
+          <div class="bl-m"><b>{{ r.desc }}</b>
+            <span class="rt" [class.rbp]="E().rowSide(r) === 'p'" [class.rbs]="E().rowSide(r) === 's'">{{ E().rowSide(r) === 'p' ? 'Purchase' : 'Sale' }}</span>
+            <div class="sub">{{ r.cur }} {{ m(r.qty) }} {{ E().rateShort(r.cur, E().rowRate(r)) }} · {{ r.stock }} · {{ MIC[r.mode] }} {{ PMODES[r.mode] }}{{ r.dealer ? ' (' + r.dealer + ')' : '' }}{{ r.bank ? ' (' + r.bank + ')' : '' }}</div></div>
+          <div class="bl-a" [class.neg]="E().rowSide(r) === 'p'" [class.pos]="E().rowSide(r) === 's'">₹{{ m(E().rowAmt(r)) }}</div>
+          <div class="bl-b">
+            @if (E().payOf(b.id, i); as pj) {
+              <span class="chip done">✓ {{ E().rowSide(r) === 'p' ? 'Paid' : 'Received' }} {{ dmy(pj.date) }}</span>
+              <button class="sm" (click)="unpay(b, i)" title="Back to pending">↩</button>
+            } @else {
+              <button class="sm" [class.paybtn]="E().rowSide(r) === 'p'" [class.recvbtn]="E().rowSide(r) === 's'" (click)="openPay(b, i)">{{ E().rowSide(r) === 'p' ? '💸 Pay' : '💰 Receive' }}</button>
+            }
+            @if (phoneOf(r.desc)) { <a class="sm wa" [href]="waLink(b, r.desc)" target="_blank" rel="noopener">💬 WhatsApp</a> }
+            @else { <button class="sm" (click)="phoneKey = b.id + ':' + i; phoneVal = ''" title="Add WhatsApp number">💬 +</button> }
+          </div>
+        </div>
+        @if (phoneKey === b.id + ':' + i) {
+          <div class="paypanel"><label>WhatsApp number for {{ r.desc }}</label>
+            <div class="row"><input [(ngModel)]="phoneVal" inputmode="tel" placeholder="10-digit mobile"><button class="pr" (click)="savePhone(r.desc)">Save</button><button (click)="phoneKey = null">Cancel</button></div></div>
+        }
+        @if (payKey() === b.id + ':' + i && PY) {
+          <div class="paypanel">
+            <div class="seg">@for (md of modes; track md) { <button [class.on]="PY.mode === md" (click)="PY.mode = md">{{ MIC[md] }} {{ PMODES[md] }}</button> }</div>
+            <div class="grid3">
+              <div><label>Date</label><input type="date" [(ngModel)]="PY.date"></div>
+              <div><label>Amount ({{ r.base }})</label><input [(ngModel)]="PY.amt" inputmode="decimal"></div>
+              @if (PY.mode === 'bank') {
+                <div><label>Bank</label><select [(ngModel)]="PY.bank"><option value="BANK">BANK</option>
+                  @for (bk of S().banks; track bk.name) { <option [value]="bk.name">{{ bk.name }}</option> }<option value="__new">➕ New bank…</option></select></div>
+                @if (PY.bank === '__new') {
+                  <div><label>Bank name</label><input [(ngModel)]="PY.nbName" class="up"></div>
+                  <div><label>A/c no.</label><input [(ngModel)]="PY.nbAc"></div>
+                  <div><label>IFSC</label><input [(ngModel)]="PY.nbIfsc" class="up"></div>
+                }
+              }
+              @if (PY.mode === 'home') {
+                <div><label>Dealer</label><select [(ngModel)]="PY.dealer"><option value="">No dealer (from cash)</option>
+                  @for (d of S().dealers; track d.name) { <option [value]="d.name">{{ d.name }}</option> }<option value="__new">➕ New dealer…</option></select></div>
+                @if (PY.dealer === '__new') { <div><label>Dealer name</label><input [(ngModel)]="PY.ndName" class="up"></div> }
+              }
+              <div><label>{{ PY.mode === 'home' ? 'Delivery person' : PY.mode === 'shop' ? 'Handed over by' : 'Paid by' }}</label><input [(ngModel)]="PY.person" class="up"></div>
+              <div><label>Token / ref no.</label><input [(ngModel)]="PY.ref"></div>
+              <div><label>Commission per lakh</label><input [(ngModel)]="PY.comm" inputmode="decimal" placeholder="0"></div>
+            </div>
+            <div class="acts">
+              <button class="pr" (click)="confirmPay(b, i)" [disabled]="store.busy()">✓ Confirm {{ E().rowSide(r) === 'p' ? 'paid' : 'received' }}</button>
+              <button (click)="payKey.set(null)">Cancel</button>
+            </div>
+          </div>
+        }
+      }
+    </div>
+  } @empty { <div class="empty">No bills yet.</div> }
+</div>
+}
+
+<datalist id="dl-acc">@for (a of E().allAccounts(); track a) { <option [value]="a"></option> }</datalist>
