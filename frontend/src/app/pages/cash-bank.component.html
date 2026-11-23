@@ -10,7 +10,7 @@
   </div>
 
   <div class="gridwrap vgw"><table class="g vg">
-    <thead><tr><th>S.No.</th><th class="desc">Description</th><th>Mode</th><th>Bank A/c</th><th class="n">OUT – we give</th><th class="n">IN – we get</th><th class="n">EXPENSE</th><th>From / To</th><th>Remarks</th><th></th></tr></thead>
+    <thead><tr><th>S.No.</th><th class="desc">Description</th><th>Mode</th><th>Bank A/c</th><th class="n">IN – we get</th><th class="n">OUT – we give</th><th class="n">EXPENSE</th><th>Remarks</th><th></th></tr></thead>
     <tbody>
       @for (x of rows; track x; let i = $index) {
         <tr>
@@ -18,10 +18,9 @@
           <td class="desc"><input [(ngModel)]="x.desc" (ngModelChange)="trail()" list="dl-acc2" class="up" autocomplete="off" (keydown.enter)="nextBox($event)"></td>
           <td><select [(ngModel)]="x.mode" (keydown.enter)="nextBox($event)"><option value="cash">Cash</option><option value="bank">Bank</option></select></td>
           <td><select [(ngModel)]="x.bank" [disabled]="x.mode !== 'bank'"><option value="BANK">BANK</option>@for (b of S().banks; track b.name) { <option [value]="b.name">{{ b.name }}</option> }</select></td>
-          <td class="n"><input class="vout" [(ngModel)]="x.out" (ngModelChange)="amtChanged(x, 'out')" inputmode="decimal" (keydown.enter)="nextBox($event)"></td>
           <td class="n"><input class="vin" [(ngModel)]="x.inn" (ngModelChange)="amtChanged(x, 'inn')" inputmode="decimal" (keydown.enter)="nextBox($event)"></td>
+          <td class="n"><input class="vout" [(ngModel)]="x.out" (ngModelChange)="amtChanged(x, 'out')" inputmode="decimal" (keydown.enter)="nextBox($event)"></td>
           <td class="n"><input class="vexp" [(ngModel)]="x.exp" (ngModelChange)="amtChanged(x, 'exp')" inputmode="decimal" (keydown.enter)="nextBox($event)"></td>
-          <td><input [(ngModel)]="x.other" list="dl-acc2" class="up" autocomplete="off" (keydown.enter)="nextBox($event)"></td>
           <td><input [(ngModel)]="x.note" (keydown.enter)="nextBox($event)"></td>
           <td><button class="x" (click)="removeRow(i)" title="Remove row">✕</button></td>
         </tr>
@@ -31,8 +30,8 @@
 
   @if (tot(); as t) {
     <div class="vtm">
-      <div><span>OUT</span><b class="neg">{{ m(t.o) }}</b></div>
       <div><span>IN</span><b class="pos">{{ m(t.i) }}</b></div>
+      <div><span>OUT</span><b class="neg">{{ m(t.o) }}</b></div>
       <div><span>EXPENSE</span><b class="exp">{{ m(t.e) }}</b></div>
       <div><span>Net</span><b>{{ m(t.net) }}</b></div>
       @if (auth.seeMoney()) {
@@ -41,7 +40,7 @@
       }
     </div>
   }
-  <div class="hint">OUT = we give · IN = we get · EXPENSE = we spend. Enter moves to the next box, Esc goes back. From/To only when one party pays another for us.</div>
+  <div class="hint">IN = we get · OUT = we give · EXPENSE = we spend. Enter moves to the next box, Esc goes back.</div>
   <div class="acts">
     <button class="pr" (click)="saveVoucher()" [disabled]="store.busy()">💾 Save voucher</button>
     <button (click)="newVoucher()">New voucher</button>
@@ -49,15 +48,20 @@
 </div>
 
 <div class="card">
-  <div class="fhd"><h2 class="sech">📋 Recent entries <small>{{ shown().length }} rows · newest at the bottom</small></h2>
+  <div class="fhd"><h2 class="sech">📋 Recent entries <small>{{ shown().length }} rows{{ CF ? ' in ' + CF : '' }} · newest at the bottom</small></h2>
+    <div class="fbar">
+    <div class="seg bf cf" title="Show one currency">
+      <button [class.on]="!CF" (click)="CF = ''">All currencies</button>
+      @for (c of E().allCurs(); track c) { <button [class.on]="CF === c" (click)="CF = c">{{ c }}</button> }
+    </div>
     <div class="seg bf">
       <button [class.on]="RF === 'all'" (click)="RF = 'all'">All</button>
       <button [class.on]="RF === 'vouchers'" (click)="RF = 'vouchers'">Vouchers</button>
       @if (auth.canPage('pay') || auth.canPage('bill')) { <button [class.on]="RF === 'bills'" (click)="RF = 'bills'">Bills</button> }
-    </div></div>
+    </div></div></div>
   @if (shown().length) {
   <div class="xlwrap" id="xlwrap"><table class="xl">
-    <thead><tr><th class="rn"></th><th>Date</th><th>Type / No.</th><th>Description</th><th>Mode</th><th>Cur.</th><th class="n">OUT</th><th class="n">IN</th><th class="n">EXPENSE</th><th class="n">Bill amount</th><th class="n">Cash balance</th><th class="wide">From / To</th><th class="wide">Remarks</th><th></th></tr></thead>
+    <thead><tr><th class="rn"></th><th>Date</th><th>Type / No.</th><th>Description</th><th>Mode</th><th>Cur.</th><th class="n">IN</th><th class="n">OUT</th><th class="n">EXPENSE</th><th class="n">Bill amount</th><th class="n">Cash balance</th><th class="wide">Remarks</th><th></th></tr></thead>
     <tbody>
       @for (it of shown(); track $index; let k = $index; let last = $last) {
         <tr [class.xnew]="last">
@@ -66,18 +70,18 @@
             @if (E().jvRow(it.j!); as r) {
               <td>{{ dmy(it.j!.date) }}</td>
               <td><span class="rt" [class.rpay]="it.j!.link" [class.rv]="!it.j!.link">{{ it.j!.link ? 'Payment' : 'Voucher' }}</span>@if (it.j!.vno) { <span class="tno">{{ it.j!.vno }}</span> }</td>
-              <td><b>{{ r.desc }}</b>@if (r.other || r.rem) { <div class="fold" [title]="(r.other ? 'From/To ' + r.other + ' · ' : '') + r.rem">{{ r.other ? 'From/To ' + r.other : '' }}{{ r.other && r.rem ? ' · ' : '' }}{{ r.rem }}</div> }</td>
+              <td><b>{{ r.desc }}</b>@if (r.other) { <div class="sub">From/To {{ r.other }}</div> }@if (r.rem) { <div class="fold" [title]="r.rem">{{ r.rem }}</div> }</td>
               <td>{{ r.mode }}{{ r.bank ? ' · ' + r.bank : '' }}</td><td>{{ it.j!.cur }}</td>
-              <td class="n vout">{{ r.dir === 'out' ? m(it.j!.amt) : '' }}</td><td class="n vin">{{ r.dir === 'in' ? m(it.j!.amt) : '' }}</td><td class="n vexp">{{ r.dir === 'exp' ? m(it.j!.amt) : '' }}</td>
-              <td></td><td class="n cbal" [class.neg]="(it.cb || 0) < 0" [class.sub]="!it.cd">{{ m(it.cb || 0) }}</td><td class="wide">{{ r.other }}</td><td class="rem wide"><div class="clip" [title]="r.rem">{{ r.rem }}</div></td>
-              <td class="c"><button class="x" (click)="delJv(it.j!)" title="Delete">🗑</button></td>
+              <td class="n vin">{{ r.dir === 'in' ? m(it.j!.amt) : '' }}</td><td class="n vout">{{ r.dir === 'out' ? m(it.j!.amt) : '' }}</td><td class="n vexp">{{ r.dir === 'exp' ? m(it.j!.amt) : '' }}</td>
+              <td></td><td class="n cbal" [class.neg]="(it.cb || 0) < 0" [class.sub]="!it.cd">{{ m(it.cb || 0) }}</td><td class="rem wide"><div class="clip" [title]="r.rem">{{ r.rem }}</div></td>
+              <td class="c nowrap">@if (canEdit(it.j!)) { <button class="x" (click)="openEdit(it.j!)" title="Edit">✏️</button> }<button class="x" (click)="delJv(it.j!)" title="Delete">🗑</button></td>
             }
           } @else {
             <td>{{ dmy(it.b!.date) }}</td>
             <td><span class="rt" [class.rbp]="E().rowSide(it.r!) === 'p'" [class.rbs]="E().rowSide(it.r!) === 's'">{{ E().rowSide(it.r!) === 'p' ? 'Purchase' : 'Sale' }}</span> <span class="tno">Bill {{ it.b!.no }}</span></td>
             <td><b>{{ it.r!.desc }}</b><div class="fold">{{ it.r!.cur }} {{ m(it.r!.qty) }} {{ E().rateShort(it.r!.cur, E().rowRate(it.r!)) }}</div></td>
             <td>{{ PMODES[it.r!.mode] }}{{ it.r!.bank ? ' · ' + it.r!.bank : '' }}</td><td>{{ it.r!.base }}</td>
-            <td></td><td></td><td></td><td class="n"><b>{{ m(E().rowAmt(it.r!)) }}</b></td><td></td><td class="wide"></td>
+            <td></td><td></td><td></td><td class="n"><b>{{ m(E().rowAmt(it.r!)) }}</b></td><td></td>
             <td class="rem wide"><div class="clip">{{ it.r!.cur }} {{ m(it.r!.qty) }} {{ E().rateShort(it.r!.cur, E().rowRate(it.r!)) }}</div></td>
             <td class="c">@if (E().payOf(it.b!.id, it.i!)) { <span class="rt rdone">✓ {{ E().rowSide(it.r!) === 'p' ? 'Paid' : 'Received' }}</span> } @else { <span class="rt rpend">Pending</span> }</td>
           }
@@ -86,15 +90,42 @@
     </tbody>
     <tfoot>
       @for (f of footer().tot; track f.c) {
-        <tr><td class="rn"></td><td colspan="4" class="r">Cash / bank total · <b>Net {{ m(f.i - f.o - f.e) }}</b></td><td><b>{{ f.c }}</b></td><td class="n vout">{{ m(f.o) }}</td><td class="n vin">{{ m(f.i) }}</td><td class="n vexp">{{ m(f.e) }}</td><td></td><td class="n"><b>{{ m(f.run) }}</b></td><td class="wide"></td><td class="wide"></td><td></td></tr>
+        <tr><td class="rn"></td><td colspan="4" class="r">Cash / bank total · <b>Net {{ m(f.i - f.o - f.e) }}</b></td><td><b>{{ f.c }}</b></td><td class="n vin">{{ m(f.i) }}</td><td class="n vout">{{ m(f.o) }}</td><td class="n vexp">{{ m(f.e) }}</td><td></td><td class="n"><b>{{ m(f.run) }}</b></td><td class="wide"></td><td></td></tr>
       }
       @if (footer().bt.p || footer().bt.s) {
-        <tr><td class="rn"></td><td colspan="4" class="r">Bills total</td><td><b>{{ S().base }}</b></td><td colspan="4" class="sub">Purchase {{ m(footer().bt.p) }} · Sale {{ m(footer().bt.s) }}</td><td></td><td class="wide"></td><td class="wide"></td><td></td></tr>
+        <tr><td class="rn"></td><td colspan="4" class="r">Bills total</td><td><b>{{ S().base }}</b></td><td colspan="4" class="sub">Purchase {{ m(footer().bt.p) }} · Sale {{ m(footer().bt.s) }}</td><td></td><td class="wide"></td><td></td></tr>
       }
     </tfoot>
   </table></div>
-  } @else { <div class="empty">No entries yet.</div> }
+  } @else { <div class="empty">{{ CF ? 'No ' + CF + ' entries.' : 'No entries yet.' }}</div> }
 </div>
+
+@if (ed) {
+  <div class="modal-bg" (click)="$event.target === $event.currentTarget && (ed = null)"><div class="modal">
+    <h2>✏️ Edit voucher {{ ed.vno }}</h2>
+    <div class="seg edir">
+      <button class="sbtn" [class.on]="ed.dir === 'in'" (click)="ed.dir = 'in'">IN – we get</button>
+      <button class="pbtn" [class.on]="ed.dir === 'out'" (click)="ed.dir = 'out'">OUT – we give</button>
+      <button class="xbtn" [class.on]="ed.dir === 'exp'" (click)="ed.dir = 'exp'">EXPENSE</button>
+    </div>
+    <div class="grid2">
+      <div><label>Date</label><input type="date" [(ngModel)]="ed.date"></div>
+      <div><label>Voucher No.</label><input [(ngModel)]="ed.vno" inputmode="numeric"></div>
+      <div><label>Description</label><input [(ngModel)]="ed.desc" list="dl-acc2" class="up" autocomplete="off" [placeholder]="ed.dir === 'exp' ? 'EXPENSES' : ''"></div>
+      <div><label>Amount</label>
+        <div class="row"><select class="w110" [(ngModel)]="ed.cur">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select>
+          <input id="ed-amt" [(ngModel)]="ed.amt" inputmode="decimal" placeholder="0.00" (keydown.enter)="saveEdit()"></div></div>
+      @if (ed.other) {
+        <div><label>From / To</label><input [value]="ed.other" disabled></div>
+      } @else {
+        <div><label>Mode</label><select [(ngModel)]="ed.mode"><option value="cash">💵 Cash</option><option value="bank">🏦 Bank</option></select></div>
+        @if (ed.mode === 'bank') { <div><label>Bank A/c</label><select [(ngModel)]="ed.bank">@for (b of edBanks(); track b) { <option [value]="b">{{ b }}</option> }</select></div> }
+      }
+      <div [class.span2]="!ed.other && ed.mode === 'bank'"><label>Remarks</label><input [(ngModel)]="ed.note" placeholder="optional"></div>
+    </div>
+    <div class="acts"><button class="pr" (click)="saveEdit()" [disabled]="store.busy()">💾 Save changes</button><button (click)="ed = null">Cancel</button></div>
+  </div></div>
+}
 
 @if (cap) {
   <div class="modal-bg" (click)="$event.target === $event.currentTarget && (cap = null)"><div class="modal">

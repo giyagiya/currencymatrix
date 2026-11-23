@@ -30,8 +30,8 @@ export class BillComponent {
   date = today();
   no = '';
   rows: Line[] = [this.newLine()];   // entry grid; an empty row is always kept at the bottom
-  /** Stock · Price in · WhatsApp columns: hidden on laptops (they fill in by themselves), shown on wide screens; the choice is remembered. */
-  more = (() => { try { const v = localStorage.getItem('remit.billMoreCols'); if (v !== null) return v === '1'; } catch {} return window.innerWidth >= 1700; })();
+  /** Stock · Price in · WhatsApp columns: shown when the full grid fits without side scroll (laptops and up), hidden on small screens (they fill in by themselves); the choice is remembered. */
+  more = (() => { try { const v = localStorage.getItem('remit.billMoreCols'); if (v !== null) return v === '1'; } catch {} return window.innerWidth >= 1280; })();
   toggleMore() { this.more = !this.more; try { localStorage.setItem('remit.billMoreCols', this.more ? '1' : '0'); } catch {} }
   // list
   BF: 'all' | 'pending' | 'paid' = 'all';

@@ -2,7 +2,7 @@ const r = require('express').Router();
 const { tx } = require('../db');
 const { requireAuth, needPage, checkDeletePin, canPage } = require('../auth');
 const { U, num, newId, isDate, bad, HttpError } = require('../util');
-const { ensureAccounts, upsertBanks, upsertDealers, patchSettings, nextJvNo, insertJv, audit, SAFE_SETTINGS, loadBook } = require('../book');
+const { ensureAccounts, upsertBanks, upsertDealers, patchSettings, nextJvNo, checkJv, insertJv, audit, SAFE_SETTINGS, loadBook } = require('../book');
 
 r.use(requireAuth);
 
@@ -43,6 +43,30 @@ r.post('/jv', async (req, res) => {
     return { ids };
   });
   res.json({ ok: true, ...out, book: await loadBook(undefined, req.user) });
+});
+
+/* Edit one voucher line (Cash & Bank). Bill payments are changed from Bills & payments (undo + pay again).
+   body: { entry:{date,vno,type,desc,dr,cr,cur,amt,note,mode,bank}, accounts?:[{name,type}] } */
+r.put('/jv/:id', needPage('jv'), async (req, res) => {
+  const e = req.body.entry || {};
+  if (!isDate(e.date)) throw bad('Enter a valid date');
+  if (!String(e.cur || '').trim()) throw bad('Choose a currency');
+  checkJv(e);
+  await tx(async db => {
+    const old = (await db.query('SELECT * FROM jv WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!old) throw new HttpError(404, 'Entry not found – refresh and try again');
+    if (old.link_bill) throw bad('This is a bill payment – change it from Bills & payments');
+    const capital = [old.dr, old.cr, e.dr, e.cr].some(a => U(a) === 'CAPITAL');
+    if (capital && !canPage(req.user, 'sheet')) throw new HttpError(403, 'Only logins with the Balance page can change capital');
+    await ensureAccounts(db, req.body.accounts);
+    for (const a of [e.dr, e.cr]) await ensureAccounts(db, [{ name: a, type: 'party' }]);
+    const after = { vno: String(e.vno || '').trim() || old.vno, date: e.date, type: e.type || 'out', descr: U(e.desc), dr: U(e.dr), cr: U(e.cr), cur: U(e.cur),
+      amt: Math.round(num(e.amt) * 100) / 100, note: e.note || '', mode: e.mode || '', bank: U(e.bank) };
+    await db.query('UPDATE jv SET vno=$2,date=$3,type=$4,descr=$5,dr=$6,cr=$7,cur=$8,amt=$9,note=$10,mode=$11,bank=$12 WHERE id=$1',
+      [old.id, after.vno, after.date, after.type, after.descr, after.dr, after.cr, after.cur, after.amt, after.note, after.mode, after.bank]);
+    await audit(db, req.user.name, 'jv.edit', { id: old.id, before: old, after });
+  });
+  res.json({ ok: true, book: await loadBook(undefined, req.user) });
 });
 
 r.delete('/jv/:id', needPage(['jv', 'pay']), async (req, res) => {

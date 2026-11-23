@@ -9,23 +9,31 @@ import { UiService } from './shared/ui.service';
   standalone: true,
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
-  <header>
-    <h1><span class="logo">₹</span>Remit</h1>
-    @if (auth.user(); as u) {
-      <span class="uchip">👤 {{ u.name }} <small>{{ roleName[u.role] }}</small><button (click)="logout()">Logout</button></span>
-    }
-    <span class="pill">{{ store.busy() ? 'Saving…' : 'Saved' }}</span>
+  <header class="topbar">
+    <div class="tb-in">
+      <h1 class="brand"><span class="logo">₹</span>Remit</h1>
+      <nav aria-label="Main">
+        @for (n of nav; track n[0]) {
+          @if (auth.canTab(n[0])) {
+            <a [routerLink]="'/' + n[0]" routerLinkActive="on" [title]="n[2]"><span class="ic">{{ n[1] }}</span><span class="lb">{{ n[2] }}</span></a>
+          }
+        }
+      </nav>
+      <div class="tb-r">
+        <span class="pill" [class.busy]="store.busy()"><i></i>{{ store.busy() ? 'Saving…' : 'Saved' }}</span>
+        @if (auth.user(); as u) {
+          <span class="uchip">
+            <span class="av">{{ (u.name || '?').charAt(0).toUpperCase() }}</span>
+            <span class="un">{{ u.name }}<small>{{ roleName[u.role] }}</small></span>
+            <button class="out" (click)="logout()" title="Logout" aria-label="Logout"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg><span class="lb">Logout</span></button>
+          </span>
+        }
+      </div>
+    </div>
   </header>
   <main>
     @if (store.book()) { <router-outlet /> } @else { <div class="empty">Loading…</div> }
   </main>
-  <nav>
-    @for (n of nav; track n[0]) {
-      @if (auth.canTab(n[0])) {
-        <a [routerLink]="'/' + n[0]" routerLinkActive="on"><span class="ic">{{ n[1] }}</span>{{ n[2] }}</a>
-      }
-    }
-  </nav>
   `,
 })
 export class ShellComponent implements OnInit {

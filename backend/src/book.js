@@ -85,11 +85,16 @@ async function nextJvNo(db) {
   return Number(rows[0].m) + 1;
 }
 
-// Insert one jv record (already validated)
-async function insertJv(db, j, who) {
+// Rules every jv record must follow (new or edited)
+function checkJv(j) {
   if (!j.dr || !j.cr) throw bad('Entry needs a debit and a credit account');
   if (U(j.dr) === U(j.cr)) throw bad('Debit and credit can not be the same account (' + U(j.dr) + ')');
   if (!(num(j.amt) > 0)) throw bad('Amount must be more than 0');
+}
+
+// Insert one jv record (already validated)
+async function insertJv(db, j, who) {
+  checkJv(j);
   await db.query(`INSERT INTO jv(id,no,vno,date,type,descr,dr,cr,cur,amt,note,mode,bank,dealer,person,ref,link_bill,link_line,link_comm,created_by)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
     [j.id, j.no, String(j.vno || ''), j.date, j.type || 'out', U(j.desc), U(j.dr), U(j.cr), U(j.cur), Math.round(num(j.amt) * 100) / 100,
@@ -101,4 +106,4 @@ async function audit(db, who, action, detail) {
   await db.query('INSERT INTO audit_log(who,action,detail) VALUES($1,$2,$3)', [who, action, JSON.stringify(detail || {})]);
 }
 
-module.exports = { loadBook, ensureAccounts, upsertBanks, upsertDealers, patchSettings, nextJvNo, insertJv, audit, ACC_TYPES, SAFE_SETTINGS };
+module.exports = { loadBook, ensureAccounts, upsertBanks, upsertDealers, patchSettings, nextJvNo, checkJv, insertJv, audit, ACC_TYPES, SAFE_SETTINGS };

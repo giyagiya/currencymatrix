@@ -12,9 +12,9 @@
 
   <div class="gridwrap vgw"><table class="g bg" [class.more]="more" (keydown.enter)="gridKey($event)">
     <colgroup><col class="c-idx"><col class="c-party"><col class="c-type"><col class="c-cur"><col class="c-num"><col class="c-num"><col class="c-amt"><col class="c-pay"><col class="c-bank"><col class="c-comm">
-      @if (more) { <col class="c-stock"><col class="c-cur"><col class="c-wa"> }<col class="c-x"></colgroup>
+      @if (more) { <col class="c-stock"><col class="c-base"><col class="c-wa"> }<col class="c-x"></colgroup>
     <thead><tr><th title="Line">#</th><th class="desc">Party</th><th>Type</th><th>Currency</th><th class="n">Quantity</th><th class="n">Rate</th><th class="n">Amount</th>
-      <th>Pay by</th><th>Bank / Dealer</th><th class="n">Comm./lakh</th>@if (more) { <th>Stock</th><th>Price in</th><th>WhatsApp</th> }<th></th></tr></thead>
+      <th>Pay by</th><th>Bank / Dealer</th><th class="n">Comm./<wbr>lakh</th>@if (more) { <th>Stock</th><th>Price in</th><th>WhatsApp</th> }<th></th></tr></thead>
     <tbody>
       @for (x of rows; track x; let i = $index) {
         <tr [class.pur]="filled(x) && x.side === 'p'" [class.sale]="filled(x) && x.side === 's'">
