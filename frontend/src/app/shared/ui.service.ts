@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 
-export interface Dialog { kind: 'confirm' | 'pin'; title: string; lines: string[]; ok: string; danger?: boolean; resolve: (v: any) => void; }
+export interface Choice { k: string; label: string; cls?: string; }
+export interface Dialog { kind: 'confirm' | 'pin' | 'choice'; title: string; lines: string[]; ok: string; danger?: boolean; choices?: Choice[]; note?: string; resolve: (v: any) => void; }
 
 /** Toast messages + popups (confirm / delete password) */
 @Injectable({ providedIn: 'root' })
@@ -15,6 +16,10 @@ export class UiService {
   }
   askPin(what: string): Promise<string | null> {
     return new Promise(resolve => this.dialog.set({ kind: 'pin', title: '🔒 Password needed to delete', lines: ['Delete ' + what + '?'], ok: '🗑 Delete', danger: true, resolve }));
+  }
+  /** Popup with several buttons; resolves to the chosen button's key, or null for Esc / click outside. */
+  choose(title: string, text: string, choices: Choice[], note = ''): Promise<string | null> {
+    return new Promise(resolve => this.dialog.set({ kind: 'choice', title, lines: [text], ok: '', choices, note, resolve }));
   }
   close(v: any) { const d = this.dialog(); this.dialog.set(null); if (d) d.resolve(v); }
 }

@@ -2,7 +2,7 @@
 :root{--bg:#f4f5f7;--card:#fff;--ink:#101828;--mut:#667085;--line:#e4e7ec;--pri:#0f766e;--pri2:#e6f4f1;--red:#d92d20;--green:#067647;--orange:#b54708;--r:14px}
 *{box-sizing:border-box}
 html{font-size:14px}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Inter Variable",Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 h1,h2,h3{margin:0}
 h3{font-size:14px;margin:14px 0 6px}
 a{color:var(--pri)}
@@ -56,6 +56,8 @@ nav .ic{font-size:16px}
 .seg button.on{background:var(--card);color:var(--pri);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .seg button.pbtn.on{background:var(--red);color:#fff}.seg button.sbtn.on{background:var(--green);color:#fff}
 .seg.curbar button.on{background:var(--pri);color:#fff}
+.dft{display:inline-block;min-width:18px;margin-left:5px;padding:0 5px;border-radius:99px;background:var(--orange);color:#fff;font-size:11px;line-height:18px;text-align:center}
+.ctext{font-size:15px;line-height:1.5;margin:6px 0 14px}
 .seg.bf{flex:none}.seg.bf button{flex:none;font-size:12.5px}
 .capbar{display:flex;justify-content:flex-end}.capbtn{border-color:var(--pri);background:var(--pri2);color:var(--pri)}
 
@@ -86,6 +88,22 @@ table.s tr.net td{font-weight:800;background:var(--pri2);font-size:14px}
 table.s tr.editing td{background:#fffbe6}
 table.s td.inner{padding:0 0 0 24px;background:#fcfcfd}
 table.s input.rate{width:100px;text-align:right;padding:4px 6px}
+/* grid tables (balance sheet, profit, expenses) */
+table.s.grid th,table.s.grid td{border:1px solid var(--line)}
+table.s.grid th{text-transform:none;font-size:13px;color:var(--ink);background:#fff;font-weight:700}
+.card.pad0 table.s.grid{border-style:hidden}
+table.s.bs col.amt{width:22.5%}
+table.s tr.bs-cur td{background:#f2f4f7;color:var(--red);font-weight:800;font-size:14px}
+table.s tr.bs-gap td{height:14px;background:var(--card);border-left:0;border-right:0}
+table.s td.bs-cr{background:#fee4e2}
+table.s tr.bs-tot td{font-weight:700}
+table.s tr.bs-s td{font-weight:700}table.s tr.bs-s td.l{text-transform:uppercase;font-size:12.5px}
+table.s tr.bs-net td{font-weight:800;font-size:15px}
+table.s td.dash{border-top:2px dashed var(--ink)}
+table.s td.dash2{border-top:2px dashed var(--ink);border-bottom:2px dashed var(--ink)}
+table.s.cv{margin-top:10px}
+.acc,.acc0{font-weight:600;color:var(--ink)}.acc{text-decoration:underline;text-underline-offset:2px;cursor:pointer}.acc:hover{color:var(--pri)}
+.acc+.tag,.acc0+.tag{margin-left:6px}
 .tag{display:inline-block;font-size:11px;background:var(--bg);color:var(--mut);padding:1px 7px;border-radius:99px;font-weight:600}
 .tag.big{font-size:13px;padding:4px 10px;margin:2px}.tag .x{color:var(--red);cursor:pointer;margin-left:4px}
 .rt{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}

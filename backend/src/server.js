@@ -31,4 +31,7 @@ app.use((err, req, res, next) => {
 });
 
 const port = Number(process.env.PORT || 3000);
-app.listen(port, () => console.log('Remit API running on http://localhost:' + port));
+app.listen(port, () => {
+  console.log('Remit API running on http://localhost:' + port);
+  require('./db').checkEncoding().catch(e => console.error('✖ Database: ' + e.message));
+});

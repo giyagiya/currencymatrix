@@ -9,21 +9,27 @@ import { UiService } from './ui.service';
   imports: [FormsModule],
   template: `
   @if (ui.dialog(); as d) {
-    <div class="modal-bg" (click)="$event.target === $event.currentTarget && ui.close(d.kind === 'pin' ? null : false)">
+    <div class="modal-bg" (click)="$event.target === $event.currentTarget && ui.close(d.kind === 'confirm' ? false : null)">
       <div class="modal">
         <h2>{{ d.title }}</h2>
         @if (d.kind === 'confirm') {
           <ol class="csum">@for (l of d.lines; track $index) { <li [innerHTML]="l"></li> }</ol>
+        } @else if (d.kind === 'choice') {
+          <p class="ctext" [innerHTML]="d.lines[0]"></p>
+          <div class="acts">@for (c of d.choices; track c.k) { <button [class]="c.cls || ''" (click)="ui.close(c.k)">{{ c.label }}</button> }</div>
+          @if (d.note) { <div class="hint">{{ d.note }}</div> }
         } @else {
           <p class="big">{{ d.lines[0] }}</p>
           <label>Enter 4-number delete password</label>
           <input #pin type="password" inputmode="numeric" maxlength="4" autocomplete="off" class="pinbox"
                  [(ngModel)]="pinVal" (keydown.enter)="ui.close(pinVal); pinVal=''" autofocus>
         }
-        <div class="acts">
-          <button class="pr" [class.danger]="d.danger" (click)="ui.close(d.kind === 'pin' ? pinVal : true); pinVal=''">{{ d.ok }}</button>
-          <button (click)="ui.close(d.kind === 'pin' ? null : false); pinVal=''">{{ d.kind === 'pin' ? 'Cancel' : '✏️ Go back' }}</button>
-        </div>
+        @if (d.kind !== 'choice') {
+          <div class="acts">
+            <button class="pr" [class.danger]="d.danger" (click)="ui.close(d.kind === 'pin' ? pinVal : true); pinVal=''">{{ d.ok }}</button>
+            <button (click)="ui.close(d.kind === 'pin' ? null : false); pinVal=''">{{ d.kind === 'pin' ? 'Cancel' : '✏️ Go back' }}</button>
+          </div>
+        }
       </div>
     </div>
   }
@@ -37,6 +43,6 @@ export class DialogComponent {
   esc() {
     const d = this.ui.dialog();
     const ae = document.activeElement as HTMLElement | null;
-    if (d && !(ae && ae.tagName === 'INPUT')) this.ui.close(d.kind === 'pin' ? null : false);
+    if (d && !(ae && ae.tagName === 'INPUT')) this.ui.close(d.kind === 'confirm' ? false : null);
   }
 }

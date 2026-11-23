@@ -1,5 +1,6 @@
 import { Component, inject, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { StoreService } from '../core/store.service';
 import { TYPES } from '../core/models';
 import { m, dmy, drcr, U } from '../core/fmt';
@@ -44,4 +45,8 @@ export class LedgerComponent {
   m = m; dmy = dmy; drcr = drcr; U = U; TYPES = TYPES as Record<string, string>;
   E = computed(() => this.store.engine()!);
   acct = ''; from = ''; to = '';
+  constructor() {   // opened from the Balance sheet: /ledger?acct=NAME&to=DATE
+    const q = inject(ActivatedRoute).snapshot.queryParamMap;
+    this.acct = q.get('acct') || ''; this.to = q.get('to') || '';
+  }
 }

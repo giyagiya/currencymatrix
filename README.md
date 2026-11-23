@@ -20,8 +20,10 @@ remit/
 ```sql
 -- run in psql as the postgres user
 CREATE USER remit WITH PASSWORD 'choose-a-strong-password';
-CREATE DATABASE remit OWNER remit;
+CREATE DATABASE remit OWNER remit ENCODING 'UTF8' TEMPLATE template0;
 ```
+The database must be **UTF8** – otherwise entries containing ₹ (e.g. commission notes) fail with "Server error".
+Check with `SHOW server_encoding;` (the API also prints a warning at start if it is not UTF8).
 
 ## 3. Start the API
 ```bash

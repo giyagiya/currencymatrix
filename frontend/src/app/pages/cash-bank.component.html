@@ -6,13 +6,14 @@
     <div class="bh-f"><label>Date</label><input type="date" [(ngModel)]="date"></div>
     <div class="bh-f"><label>Voucher No.</label><input [(ngModel)]="vno" inputmode="numeric"></div>
     <div class="bh-f grow"><label>Currency (whole voucher)</label>
-      <div class="seg curbar">@for (c of E().allCurs(); track c) { <button [class.on]="cur === c" (click)="cur = c">{{ c }}</button> }</div></div>
+      <div class="seg curbar">@for (c of E().allCurs(); track c) {
+        <button [class.on]="cur === c" (click)="switchCur(c)">{{ c }}@if (draftCount(c)) { <span class="dft" title="Draft rows – click to continue">{{ draftCount(c) }}</span> }</button> }</div></div>
   </div>
 
   <div class="gridwrap vgw"><table class="g vg">
     <thead><tr><th>S.No.</th><th class="desc">Description</th><th>Mode</th><th>Bank A/c</th><th class="n">OUT – we give</th><th class="n">IN – we get</th><th class="n">EXPENSE</th><th>From / To</th><th>Remarks</th><th></th></tr></thead>
     <tbody>
-      @for (x of rows; track $index; let i = $index) {
+      @for (x of rows; track x; let i = $index) {
         <tr>
           <td class="idx">{{ i + 1 }}</td>
           <td class="desc"><input [(ngModel)]="x.desc" (ngModelChange)="trail()" list="dl-acc2" class="up" autocomplete="off" (keydown.enter)="nextBox($event)"></td>

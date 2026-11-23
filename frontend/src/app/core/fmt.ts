@@ -5,8 +5,8 @@ export const num = (v: unknown): number => {
   return isFinite(n) ? n : 0;
 };
 export const U = (s: unknown) => String(s || '').trim().toUpperCase();
-/** Indian number format: 1,00,000.00 */
-export const m = (n: number) => r2(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Indian number format: 1,00,000.00  (|| 0 so a rounded -0 shows as 0.00, not -0.00) */
+export const m = (n: number) => (r2(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const p2 = (n: number) => (n < 10 ? '0' : '') + n;
 export const dmy = (s: string) => (s ? s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4) : '');
 export const today = () => { const d = new Date(); return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); };

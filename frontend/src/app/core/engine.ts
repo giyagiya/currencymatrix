@@ -97,7 +97,7 @@ export class Engine {
       Object.keys(A).forEach(a => { const t = this.accType(a); if (t === 'capital') cap -= A[a]; else if (t !== 'expense') net += A[a]; });
       if (Math.abs(net) < 0.004 && Math.abs(cap) < 0.004) return;
       const rate = this.curRate(c);
-      res.parts.push({ cur: c, net: net + cap, rate, inBase: net * rate }); res.cap += cap * rate;
+      res.parts.push({ cur: c, net, rate, inBase: net * rate }); res.cap += cap * rate;
     });
     res.value = res.parts.reduce((x, p) => x + p.inBase, 0); res.total = res.value - res.cap;
     return res;
@@ -146,6 +146,14 @@ export class Engine {
       if (r.cur === cur && (!base || (r.base || this.S.base) === base) && this.rowRate(r) > 0 && (!best || b.date >= best.d)) best = { d: b.date, r: this.rowRate(r) };
     }));
     return best ? (best as { r: number }).r : 0;
+  }
+  /** Rate of the latest purchase of this currency against the base currency (0 = never bought). */
+  lastPRate(cur: string) {
+    let d = '', rate = 0;
+    this.S.bills.forEach(b => b.rows.forEach(r => {
+      if (r.cur === cur && (r.base || this.S.base) === this.S.base && num(r.prate) > 0 && b.date >= d) { d = b.date; rate = num(r.prate); }
+    }));
+    return rate;
   }
   nextBillNo() { let mx = 0; this.S.bills.forEach(b => { const n = parseInt(b.no, 10); if (n > mx) mx = n; }); return mx + 1; }
   nextVno() { let mx = 0; this.S.jv.forEach(j => { const n = parseInt(j.vno, 10); if (n > mx) mx = n; }); return mx + 1; }

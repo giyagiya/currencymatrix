@@ -58,18 +58,38 @@ export class CashBankComponent implements AfterViewChecked {
     return k === 'out' ? `We <b>GIVE</b> ${a} to <b>${d}</b> from ${via}` : `We <b>GET</b> ${a} from <b>${d}</b> into ${via}`;
   }
 
-  async saveVoucher() {
+  /* currency switch: unsaved rows of the old currency are saved, kept as a draft, or the switch is cancelled */
+  drafts: Record<string, VLine[]> = {};
+  draftCount(c: string) { return (this.drafts[c] || []).filter(x => this.filled(x)).length; }
+  async switchCur(c: string) {
+    if (c === this.cur) return;
+    const from = this.cur, n = this.rows.filter(x => this.filled(x)).length;
+    if (n) {
+      const k = await this.ui.choose('Save ' + from + ' entries first?',
+        'You have <b>' + n + ' unsaved ' + from + ' row' + (n > 1 ? 's' : '') + '</b>. Do you want to save them before switching to <b>' + c + '</b>?',
+        [{ k: 'save', label: '✓ Yes, save', cls: 'pr' }, { k: 'draft', label: 'Keep separate (draft)' }, { k: 'cancel', label: 'Cancel' }],
+        '“Keep separate” keeps these ' + from + ' rows as a draft. Click ' + from + ' again to continue them.');
+      if (k === 'save') { if (!(await this.saveVoucher())) return; }
+      else if (k === 'draft') this.drafts[from] = this.rows;
+      else return;
+    }
+    this.cur = c;
+    this.rows = this.drafts[c] || [this.empty()];
+    delete this.drafts[c];
+  }
+
+  async saveVoucher(): Promise<boolean> {
     const LL = this.rows.filter(x => this.filled(x)), S = this.S();
-    if (!LL.length) { this.ui.toast('Add at least one line'); return; }
+    if (!LL.length) { this.ui.toast('Add at least one line'); return false; }
     for (let q = 0; q < LL.length; q++) {
       const y = LL[q], d = this.dir(y);
-      if (d === 'exp') { if (!U(y.desc)) y.desc = 'EXPENSES'; else if (S.accounts[U(y.desc)] && this.E().accType(U(y.desc)) !== 'expense') { this.ui.toast('Line ' + (q + 1) + ': ' + U(y.desc) + ' is not an expense. Use RENT, TEA, SALARY…'); return; } }
-      if (!U(y.desc)) { this.ui.toast('Line ' + (q + 1) + ': enter Description'); return; }
-      if (!(this.amt(y) > 0)) { this.ui.toast('Line ' + (q + 1) + ': enter OUT, IN or EXPENSE amount'); return; }
-      if (U(y.other) && U(y.other) === U(y.desc)) { this.ui.toast('Line ' + (q + 1) + ': From/To must be different'); return; }
-      if (!U(y.other) && U(y.desc) === this.counter(y)) { this.ui.toast('Line ' + (q + 1) + ': Description can’t be ' + this.counter(y) + '. Use CAPITAL + IN to add your own money.'); return; }
+      if (d === 'exp') { if (!U(y.desc)) y.desc = 'EXPENSES'; else if (S.accounts[U(y.desc)] && this.E().accType(U(y.desc)) !== 'expense') { this.ui.toast('Line ' + (q + 1) + ': ' + U(y.desc) + ' is not an expense. Use RENT, TEA, SALARY…'); return false; } }
+      if (!U(y.desc)) { this.ui.toast('Line ' + (q + 1) + ': enter Description'); return false; }
+      if (!(this.amt(y) > 0)) { this.ui.toast('Line ' + (q + 1) + ': enter OUT, IN or EXPENSE amount'); return false; }
+      if (U(y.other) && U(y.other) === U(y.desc)) { this.ui.toast('Line ' + (q + 1) + ': From/To must be different'); return false; }
+      if (!U(y.other) && U(y.desc) === this.counter(y)) { this.ui.toast('Line ' + (q + 1) + ': Description can’t be ' + this.counter(y) + '. Use CAPITAL + IN to add your own money.'); return false; }
     }
-    if (!(await this.ui.confirm('Please check – Voucher ' + this.vno + ' (' + this.cur + ')', LL.map(x => this.sentence(x))))) return;
+    if (!(await this.ui.confirm('Please check – Voucher ' + this.vno + ' (' + this.cur + ')', LL.map(x => this.sentence(x))))) return false;
     const accounts: any[] = [];
     const entries = LL.map(x => {
       const d = this.dir(x), desc = U(x.desc), c = this.counter(x);
@@ -80,6 +100,7 @@ export class CashBankComponent implements AfterViewChecked {
     });
     const r = await this.store.save('post', '/jv', { entries, accounts }, 'Voucher ' + this.vno + ' saved');
     if (r) { this.rows = [this.empty()]; this.vno = String(this.E().nextVno()); this.scrolled = 0; }
+    return !!r;
   }
   newVoucher() { this.rows = [this.empty()]; this.vno = String(this.E().nextVno()); }
 
