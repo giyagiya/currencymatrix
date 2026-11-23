@@ -8,7 +8,7 @@
     <div class="bh-f"><label>Bill No.</label><input [(ngModel)]="no" inputmode="numeric"></div>
   </div>
 
-  <div class="entry" [class.sale]="L.side === 's'">
+  <div class="entry" [class.sale]="L.side === 's'" (keydown.enter)="enterKey($event)">
     <div class="f f-party"><label>Party</label>
       <input id="l-desc" [(ngModel)]="L.desc" (blur)="partyPhone()" list="dl-acc" class="up" placeholder="Name" autocomplete="off"></div>
     <div class="f"><label>WhatsApp no.</label><input [(ngModel)]="L.phone" inputmode="tel" placeholder="optional"></div>
@@ -23,10 +23,10 @@
       <select [(ngModel)]="L.base">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></div>
     <div class="f"><label>Quantity</label><input [(ngModel)]="L.qty" inputmode="decimal" placeholder="0"></div>
     @if (invCur(L.cur)) {
-      <div class="f"><label>Rate (÷ – 1 {{ L.base }} = ? {{ L.cur }})</label><input [(ngModel)]="L.inv" (ngModelChange)="invChanged()" inputmode="decimal" placeholder="0.00"></div>
+      <div class="f"><label>Rate (÷ – 1 {{ L.base }} = ? {{ L.cur }})</label><input [(ngModel)]="L.inv" (ngModelChange)="invChanged()" inputmode="decimal" placeholder="0.00" data-enter="add"></div>
     } @else {
       <div class="f"><label>Rate (1 {{ L.cur }} = {{ L.base }})</label>
-        <input [(ngModel)]="L.rate" inputmode="decimal" [placeholder]="lastRate(L) ? 'Last: ' + lastRate(L) : '0.00'" (keydown.enter)="addLine()"></div>
+        <input [(ngModel)]="L.rate" inputmode="decimal" [placeholder]="lastRate(L) ? 'Last: ' + lastRate(L) : '0.00'" data-enter="add"></div>
     }
     <div class="f"><label>Stock</label><input [(ngModel)]="L.stock" class="up" placeholder="e.g. SGD.COM"></div>
     <div class="f f-amt"><label>Amount ({{ L.base }})</label><div class="amt" [class.sale]="L.side === 's'">{{ m(lineAmt(L)) }}</div></div>
@@ -73,7 +73,7 @@
         </tr>
       }
     </table></div>
-  } @else { <div class="hint center">Add lines above. Press <b>Enter</b> on Rate to add the line.</div> }
+  } @else { <div class="hint center">Add lines above. <b>Enter</b> goes to the next box · <b>Enter</b> on Rate adds the line.</div> }
 
   @if (totals(); as t) {
     <div class="tots">

@@ -1,4 +1,6 @@
 const r = require('express').Router();
+const fs = require('fs');
+const path = require('path');
 const { tx, pool } = require('../db');
 const { requireAuth, needSuper, needPage, PAGES, bcrypt } = require('../auth');
 const { U, num, newId, bad, HttpError } = require('../util');
@@ -119,6 +121,27 @@ r.put('/delete-pin', needSuper, async (req, res) => {
   const pin = String(req.body.pin || '');
   if (!/^\d{4}$/.test(pin)) throw bad('Delete password must be exactly 4 numbers');
   await pool.query("INSERT INTO settings(key,value) VALUES('delPinHash',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(await bcrypt.hash(pin, 10))]);
+  res.json({ ok: true, book: await book(req) });
+});
+
+/* ---------- reset (Super admin) ---------- */
+// what = 'entries': delete all bills and vouchers (payments, capital…). Accounts, banks, dealers and settings stay.
+// what = 'all':     also delete accounts, banks, dealers and settings, back to a new install.
+// Logins and the delete password are always kept. The audit log keeps the record of the reset.
+const SCHEMA = path.join(__dirname, '..', '..', 'db', 'schema.sql');
+r.post('/reset', needSuper, async (req, res) => {
+  const what = req.body && req.body.what;
+  if (!['entries', 'all'].includes(what)) throw bad('Choose what to reset');
+  await tx(async db => {
+    const jv = (await db.query('DELETE FROM jv')).rowCount;
+    const bills = (await db.query('DELETE FROM bills')).rowCount;   // bill rows go with them
+    if (what === 'all') {
+      await db.query('DELETE FROM banks'); await db.query('DELETE FROM dealers'); await db.query('DELETE FROM accounts');
+      await db.query("DELETE FROM settings WHERE key <> 'delPinHash'");
+      await db.query(fs.readFileSync(SCHEMA, 'utf8'));   // puts back the default settings and accounts
+    }
+    await audit(db, req.user.name, 'reset.' + what, { bills, jv });
+  });
   res.json({ ok: true, book: await book(req) });
 });
 

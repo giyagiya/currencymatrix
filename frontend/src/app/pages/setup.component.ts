@@ -66,6 +66,17 @@ export class SetupComponent {
   saveDelPin() { if (!/^\d{4}$/.test(this.dpin)) { this.ui.toast('Delete password must be exactly 4 numbers'); return; }
     this.store.save('put', '/delete-pin', { pin: this.dpin }, '✓ Delete password saved').then(r => { if (r) this.dpin = ''; }); }
 
+  /* reset */
+  async reset(what: 'entries' | 'all') {
+    const S = this.S(), n = '<b>' + S.bills.length + ' bills</b> and <b>' + S.jv.length + ' entries</b>';
+    const lines = what === 'entries'
+      ? ['This deletes all ' + n + ' (vouchers, payments, capital).', 'Kept: accounts, banks, dealers, currencies, logins and the delete password.']
+      : ['This deletes all ' + n + ', and also all accounts, banks, dealers, currencies and settings.', 'Kept: logins and the delete password.'];
+    if (!(await this.ui.confirm(what === 'entries' ? '🧹 Clear all entries?' : '🗑 Reset all?', [...lines, 'Download a backup first if you may need the old data.'], '🗑 Yes, delete', true))) return;
+    if (!(await this.ui.confirm('⚠️ Last check', ['This can not be undone. Delete now?'], '🗑 Delete now', true))) return;
+    await this.store.save('post', '/reset', { what }, what === 'entries' ? '✓ All entries cleared' : '✓ Reset done – back to a new start');
+  }
+
   /* backup */
   async exportBook() {
     try {

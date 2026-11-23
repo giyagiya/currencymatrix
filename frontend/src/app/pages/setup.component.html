@@ -90,6 +90,11 @@
       </div>
       <div class="row"><input [(ngModel)]="newAcc" class="up" placeholder="New name"><select [(ngModel)]="newAccType">@for (t of typeKeys; track t) { <option [value]="t">{{ TYPES[t] }}</option> }</select><button (click)="addAcc()">＋ Add</button></div>
     </div>
+    <div class="card dz">
+      <h2 class="sech">Reset</h2>
+      <div class="hint">Download a backup first if you may need the old data.</div>
+      <div class="acts"><button (click)="reset('entries')">🧹 Clear all entries</button><button (click)="reset('all')">🗑 Reset all</button></div>
+    </div>
     <div class="card">
       <h2 class="sech">💾 Backup</h2>
       <div class="hint">Download all bills and vouchers as a file. Import replaces everything with the file (you can also import the backup from the old single-file Remit app).</div>

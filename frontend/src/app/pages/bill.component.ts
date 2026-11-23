@@ -75,6 +75,19 @@ export class BillComponent {
     setTimeout(() => document.getElementById('l-desc')?.focus(), 30);
     return true;
   }
+  // Enter in the line form: Rate adds the line, any other box jumps to the next box (last box adds the line)
+  enterKey(e: Event) {
+    const el = e.target as HTMLElement;
+    if (el.tagName === 'BUTTON' || (e as KeyboardEvent).isComposing) return;   // Enter on a button still clicks it
+    e.preventDefault();
+    if (el.dataset['enter'] === 'add') { this.addLine(); return; }
+    const box = e.currentTarget as HTMLElement;
+    setTimeout(() => {   // let a name picked from the party list fill in first
+      const boxes = Array.from(box.querySelectorAll<HTMLElement>('input, select'));
+      const next = boxes[boxes.indexOf(el) + 1];
+      if (next) next.focus(); else this.addLine();
+    });
+  }
   editLine(i: number) { this.LE = i; this.L = { ...this.lines[i] }; }
   cancelEdit() { this.LE = -1; this.L = this.newLine(this.L.cur, this.L.side, this.L.mode); }
   removeLine(i: number) { this.lines.splice(i, 1); if (this.LE === i) this.cancelEdit(); }
