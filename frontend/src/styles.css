@@ -1,5 +1,5 @@
 /* Remit – global styles (same look as the original app, compact size) */
-:root{--bg:#f4f5f7;--card:#fff;--ink:#101828;--mut:#667085;--line:#e4e7ec;--pri:#0f766e;--pri2:#e6f4f1;--red:#d92d20;--green:#067647;--orange:#b54708;--r:14px}
+:root{--nav:150px;--bg:#f4f5f7;--card:#fff;--ink:#101828;--mut:#667085;--line:#e4e7ec;--pri:#0f766e;--pri2:#e6f4f1;--red:#d92d20;--green:#067647;--orange:#b54708;--r:14px}
 *{box-sizing:border-box}
 html{font-size:14px}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Inter Variable",Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
@@ -31,15 +31,15 @@ button.x{border:0;background:none;padding:2px 6px;color:var(--mut)}
 .big{font-size:15px}
 
 /* layout */
-header{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 20px 6px;display:flex;align-items:center;gap:8px;margin-left:190px}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 20px 6px;display:flex;align-items:center;gap:8px;margin-left:var(--nav)}
 header h1{font-size:18px;display:flex;align-items:center;gap:8px}
 .logo{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--pri);color:#fff;font-size:15px}
 .pill{margin-left:8px;font-size:11.5px;background:var(--pri2);color:var(--pri);padding:3px 9px;border-radius:99px;font-weight:600}
 .uchip{margin-left:auto;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px}.uchip small{color:var(--mut);font-weight:500}
 .uchip button{padding:3px 8px;font-size:12px}
-main{margin-left:190px;padding:0 20px 40px;max-width:1500px}
-nav{position:fixed;left:0;top:0;bottom:0;width:190px;background:var(--card);border-right:1px solid var(--line);padding:56px 8px 12px;display:flex;flex-direction:column;gap:3px;z-index:6}
-nav a{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:10px;color:var(--mut);text-decoration:none;font-weight:600}
+main{margin-left:var(--nav);padding:0 20px 40px;max-width:1760px}
+nav{position:fixed;left:0;top:0;bottom:0;width:var(--nav);background:var(--card);border-right:1px solid var(--line);padding:56px 6px 12px;display:flex;flex-direction:column;gap:3px;z-index:6}
+nav a{display:flex;gap:8px;align-items:center;padding:9px 10px;white-space:nowrap;border-radius:10px;color:var(--mut);text-decoration:none;font-weight:600}
 nav a.on{background:var(--pri2);color:var(--pri)}
 nav .ic{font-size:16px}
 
@@ -118,12 +118,23 @@ table.g td.idx{text-align:center;color:var(--mut);width:40px}
 table.g td.n input{text-align:right}
 table.g .desc{min-width:170px}
 table.g select{min-width:78px}
+/* bill entry grid */
+table.bg{table-layout:fixed;width:max(100%,1056px)}table.bg.more{width:max(100%,1380px)}
+table.bg th{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.bg col.c-idx{width:36px}table.bg col.c-party{width:140px}table.bg .desc{min-width:0}table.bg col.c-type{width:100px}table.bg col.c-cur{width:80px}table.bg col.c-num{width:100px}table.bg col.c-amt{width:116px}
+table.bg col.c-pay{width:134px}table.bg col.c-bank{width:128px}table.bg col.c-comm{width:92px}table.bg col.c-stock{width:116px}table.bg col.c-wa{width:116px}table.bg col.c-x{width:34px}
+.ck.morecols{margin-left:auto;align-self:center;color:var(--mut)}.morecols small{color:var(--mut);font-weight:400}
+table.bg tr.pur td.idx{box-shadow:inset 4px 0 var(--red)}table.bg tr.sale td.idx{box-shadow:inset 4px 0 var(--green)}
+table.bg tr.pur select.side,table.bg tr.pur td.amtc{color:var(--red);font-weight:700}
+table.bg tr.sale select.side,table.bg tr.sale td.amtc{color:var(--green);font-weight:700}
+table.bg td.amtc{padding:8px;white-space:nowrap;background:#fafbfc;min-width:110px}
+table.bg input.newname{background:#fffaeb}
 .vout,input.vout{color:var(--red)}.vin,input.vin{color:var(--green)}.vexp,input.vexp{color:var(--orange)}
 
 /* spreadsheet */
 .xlwrap{max-height:520px;overflow:auto;border:1px solid #c9d1d9;border-radius:6px;background:#fff}
-table.xl{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
-table.xl th,table.xl td{border-right:1px solid #e1e5ea;border-bottom:1px solid #e1e5ea;padding:5px 8px;white-space:nowrap;text-align:left}
+table.xl{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}
+table.xl th,table.xl td{border-right:1px solid #e1e5ea;border-bottom:1px solid #e1e5ea;padding:5px 6px;white-space:nowrap;text-align:left}
 table.xl thead th{position:sticky;top:0;z-index:2;background:#f3f5f7;color:#475467;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #c9d1d9}
 table.xl .rn{background:#f3f5f7;color:#98a2b3;text-align:center;font-size:11px;width:34px;position:sticky;left:0;z-index:1}
 table.xl thead .rn{z-index:3}
@@ -133,6 +144,14 @@ table.xl tr.xnew td{background:#fffbe6}table.xl tr.xnew .rn{background:#fde68a;c
 table.xl .cbal{font-weight:600}
 table.xl tfoot td{background:#e8f3f1;font-weight:600;border-top:2px solid #c9d1d9}
 table.xl button.x{padding:0 6px}
+table.xl .tno{display:block;margin-top:2px;font-size:11.5px;font-weight:600;color:var(--mut)}
+table.xl .fold{font-size:11.5px;color:var(--mut);font-weight:400;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+table.xl .clip{max-width:240px;overflow:hidden;text-overflow:ellipsis}
+/* laptops: From/To and Remarks fold under the Description; wide screens keep their own columns */
+@media(min-width:1760px){table.xl .fold{display:none}table.xl .tno{display:inline;margin:0 0 0 6px}}
+@media(max-width:1759px){table.xl .wide{display:none}}
+@media(max-width:1440px) and (min-width:761px){main{padding:0 14px 40px}header{padding-left:14px;padding-right:14px}}
+table.ulist select{min-width:132px}
 
 /* bill list */
 .search{margin-bottom:8px}

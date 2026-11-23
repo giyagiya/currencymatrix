@@ -7,10 +7,10 @@ import { SummaryComponent } from '../shared/summary.component';
 import { Bill, BillRow, PayMode, PMODES, MIC } from '../core/models';
 import { m, num, U, r2, today, dmy, last4 } from '../core/fmt';
 
+/** One bill line = one row of the entry grid. bank / dealer hold the name (a new name is added on save). */
 interface Line {
   desc: string; phone: string; side: 'p' | 's'; cur: string; base: string; qty: string; rate: string; inv: string;
-  stock: string; mode: PayMode; bank: string; dealer: string; comm: string;
-  nbName: string; nbAc: string; nbIfsc: string; ndName: string; orig?: number; warned?: string;
+  stock: string; mode: PayMode; bank: string; dealer: string; comm: string; orig?: number;
 }
 interface PayForm { date: string; amt: string; mode: PayMode; bank: string; dealer: string; comm: string; person: string; ref: string; nbName: string; nbAc: string; nbIfsc: string; ndName: string; }
 
@@ -29,9 +29,10 @@ export class BillComponent {
   editId: string | null = null;
   date = today();
   no = '';
-  lines: Line[] = [];
-  L: Line = this.newLine();
-  LE = -1;
+  rows: Line[] = [this.newLine()];   // entry grid; an empty row is always kept at the bottom
+  /** Stock · Price in · WhatsApp columns: hidden on laptops (they fill in by themselves), shown on wide screens; the choice is remembered. */
+  more = (() => { try { const v = localStorage.getItem('remit.billMoreCols'); if (v !== null) return v === '1'; } catch {} return window.innerWidth >= 1700; })();
+  toggleMore() { this.more = !this.more; try { localStorage.setItem('remit.billMoreCols', this.more ? '1' : '0'); } catch {} }
   // list
   BF: 'all' | 'pending' | 'paid' = 'all';
   q = '';
@@ -41,60 +42,42 @@ export class BillComponent {
 
   constructor() { this.no = String(this.E().nextBillNo()); }
 
-  newLine(cur?: string, side?: 'p' | 's', mode?: PayMode): Line {
+  /** A new row copies type, currency, price-in, pay-by, bank and dealer from the row above. */
+  newLine(p?: Line): Line {
     const S = this.store.book()!;
-    const c = cur || S.currencies[0] || 'USD';
-    return { desc: '', phone: '', side: side || 'p', cur: c, base: S.base, qty: '', rate: '', inv: '', stock: S.stockOf[c] || '',
-      mode: mode || S.lastMode || 'bank', bank: 'BANK', dealer: '', comm: '', nbName: '', nbAc: '', nbIfsc: '', ndName: '' };
+    const c = p?.cur || S.currencies[0] || 'USD';
+    return { desc: '', phone: '', side: p?.side || 'p', cur: c, base: p?.base || S.base, qty: '', rate: '', inv: '', stock: p?.stock || S.stockOf[c] || '',
+      mode: p?.mode || S.lastMode || 'bank', bank: p?.bank || 'BANK', dealer: p?.dealer || '', comm: '' };
   }
+  filled(l: Line) { return !!(U(l.desc) || num(l.qty) || num(l.rate)); }
+  trail() { const last = this.rows[this.rows.length - 1]; if (this.filled(last)) this.rows.push(this.newLine(last)); }
+  removeRow(i: number) { this.rows.splice(i, 1); if (!this.rows.length || this.filled(this.rows[this.rows.length - 1])) this.rows.push(this.newLine(this.rows[this.rows.length - 1])); }
   invCur(c: string) { return this.E().invCur(c); }
-  curChanged() { this.L.stock = this.S().stockOf[this.L.cur] || ''; }
-  invChanged() { const v = num(this.L.inv); this.L.rate = v ? String(+(1 / v).toFixed(10)) : ''; }
+  curChanged(l: Line) { l.stock = this.S().stockOf[l.cur] || ''; }
+  invChanged(l: Line) { const v = num(l.inv); l.rate = v ? String(+(1 / v).toFixed(10)) : ''; }
   lineAmt(l: Line) { return num(l.qty) * num(l.rate); }
   lineComm(l: Line) { return r2(this.lineAmt(l) * num(l.comm) / 100000); }
-  partyPhone() { const a = this.S().accounts[U(this.L.desc)]; if (a && a.phone && !this.L.phone) this.L.phone = a.phone; }
+  partyPhone(l: Line) { const a = this.S().accounts[U(l.desc)]; if (a && a.phone && !l.phone) l.phone = a.phone; }
   lastRate(l: Line) { return this.E().lastRate(l.cur, l.base); }
+  isNewBank(n: string) { n = U(n); return !!n && n !== 'BANK' && !this.S().banks.some(b => b.name === n); }
+  isNewDealer(n: string) { n = U(n); return !!n && !this.S().dealers.some(d => d.name === n); }
 
-  addLine(): boolean {
-    const l = this.L;
-    if (!U(l.desc)) return this.err('Enter party name');
-    if (!(num(l.qty) > 0)) return this.err('Enter quantity');
-    if (!(num(l.rate) > 0)) return this.err('Enter rate');
-    if (l.cur === l.base) return this.err('Currency and Base currency are the same. Change one.');
-    const lr = this.lastRate(l), rr = num(l.rate);
-    if (lr && (rr > lr * 1.3 || rr < lr * 0.7) && l.warned !== l.rate) {
-      l.warned = l.rate; return this.err('⚠️ Rate ' + rr + ' is far from your usual ' + l.cur + ' rate ' + lr + '. Check it, then press Add again.');
-    }
-    if (l.mode === 'bank' && l.bank === '__new' && !U(l.nbName)) return this.err('Enter bank name');
-    if (l.mode === 'home' && l.dealer === '__new' && !U(l.ndName)) return this.err('Enter dealer name');
-    const copy = { ...l, desc: U(l.desc), stock: U(l.stock) };
-    if (this.LE >= 0) this.lines[this.LE] = copy; else this.lines.push(copy);
-    const n = this.LE >= 0 ? this.LE + 1 : this.lines.length;
-    this.ui.toast('✓ Line ' + n + (this.LE >= 0 ? ' updated' : ' added') + ' – press 💾 Save bill when done');
-    this.LE = -1; this.L = this.newLine(l.cur, l.side, l.mode);
-    setTimeout(() => document.getElementById('l-desc')?.focus(), 30);
-    return true;
-  }
-  // Enter in the line form: Rate adds the line, any other box jumps to the next box (last box adds the line)
-  enterKey(e: Event) {
+  /** Enter in the grid: next box (across, then the next row). Enter on Rate jumps to the next row's Party. */
+  gridKey(e: Event) {
     const el = e.target as HTMLElement;
     if (el.tagName === 'BUTTON' || (e as KeyboardEvent).isComposing) return;   // Enter on a button still clicks it
     e.preventDefault();
-    if (el.dataset['enter'] === 'add') { this.addLine(); return; }
-    const box = e.currentTarget as HTMLElement;
-    setTimeout(() => {   // let a name picked from the party list fill in first
-      const boxes = Array.from(box.querySelectorAll<HTMLElement>('input, select'));
-      const next = boxes[boxes.indexOf(el) + 1];
-      if (next) next.focus(); else this.addLine();
-    });
+    this.trail();
+    const toRow = el.dataset['enter'] === 'row', tr = el.closest('tr');
+    setTimeout(() => {   // let a name picked from the party list fill in, and a new row appear
+      if (toRow) { (tr?.nextElementSibling?.querySelector('td.desc input') as HTMLElement | null)?.focus(); return; }
+      const boxes = Array.from(document.querySelectorAll<HTMLElement>('table.bg input:not([disabled]), table.bg select'));
+      boxes[boxes.indexOf(el) + 1]?.focus();
+    }, 30);
   }
-  editLine(i: number) { this.LE = i; this.L = { ...this.lines[i] }; }
-  cancelEdit() { this.LE = -1; this.L = this.newLine(this.L.cur, this.L.side, this.L.mode); }
-  removeLine(i: number) { this.lines.splice(i, 1); if (this.LE === i) this.cancelEdit(); }
-  err(msg: string) { this.ui.toast(msg); return false; }
   totals() {
     let p = 0, s = 0, c = 0;
-    this.lines.forEach(l => { if (l.base !== this.S().base) return; if (l.side === 'p') p += this.lineAmt(l); else s += this.lineAmt(l); c += this.lineComm(l); });
+    this.rows.filter(l => this.filled(l)).forEach(l => { if (l.base !== this.S().base) return; if (l.side === 'p') p += this.lineAmt(l); else s += this.lineAmt(l); c += this.lineComm(l); });
     return { p, s, c, diff: s - p, net: s - p - c };
   }
   payTxt(l: { mode: string; bank: string; dealer: string; nbName?: string; ndName?: string }) {
@@ -111,34 +94,54 @@ export class BillComponent {
   }
 
   async saveBill() {
-    if (U(this.L.desc) || num(this.L.qty)) { if (!this.addLine()) return; }
-    if (!this.lines.length) { this.ui.toast('Add at least one line'); return; }
-    if (!(await this.ui.confirm('Please check – Bill ' + (this.no || ''), this.lines.map(l => this.sentence(l))))) return;
-    const S = this.S(), banks: any[] = [], dealers: any[] = [], accounts: any[] = [], stockOf = { ...S.stockOf };
-    const rows: BillRow[] = this.lines.map(l => {
-      let bank = l.mode === 'bank' ? l.bank : '', dealer = l.mode === 'home' ? l.dealer : '';
-      if (bank === '__new') { bank = U(l.nbName); banks.push({ name: bank, acno: l.nbAc, ifsc: l.nbIfsc, comm: num(l.comm) }); }
-      if (dealer === '__new') { dealer = U(l.ndName); dealers.push({ name: dealer, comm: num(l.comm) }); }
+    const LL = this.rows.filter(l => this.filled(l));
+    if (!LL.length) { this.ui.toast('Type at least one line'); return; }
+    for (let q = 0; q < LL.length; q++) {
+      const l = LL[q], n = 'Line ' + (q + 1) + ': ';
+      if (!U(l.desc)) { this.ui.toast(n + 'enter party name'); return; }
+      if (!(num(l.qty) > 0)) { this.ui.toast(n + 'enter quantity'); return; }
+      if (!(num(l.rate) > 0)) { this.ui.toast(n + 'enter rate'); return; }
+      if (l.cur === l.base) { this.ui.toast(n + 'Currency and Price in are the same. Change one.'); return; }
+    }
+    const notes: string[] = [];
+    LL.forEach((l, q) => {
+      const lr = this.lastRate(l), rr = num(l.rate);
+      if (lr && (rr > lr * 1.3 || rr < lr * 0.7)) notes.push(`⚠️ Line ${q + 1}: rate <b>${rr}</b> is far from your usual ${l.cur} rate ${lr}`);
+    });
+    const nb = [...new Set(LL.filter(l => l.mode === 'bank' && this.isNewBank(l.bank)).map(l => U(l.bank)))];
+    const nd = [...new Set(LL.filter(l => l.mode === 'home' && this.isNewDealer(l.dealer)).map(l => U(l.dealer)))];
+    nb.forEach(b => notes.push(`➕ New bank <b>${b}</b> will be added (A/c no. and IFSC can be added in Setup → Banks)`));
+    nd.forEach(d => notes.push(`➕ New delivery dealer <b>${d}</b> will be added`));
+    LL.forEach(l => { l.desc = U(l.desc); l.stock = U(l.stock); l.bank = U(l.bank) || 'BANK'; l.dealer = U(l.dealer); });
+    if (!(await this.ui.confirm('Please check – Bill ' + (this.no || ''), [...notes, ...LL.map(l => this.sentence(l))]))) return;
+    const S = this.S(), accounts: any[] = [], stockOf = { ...S.stockOf };
+    const banks = nb.map(name => ({ name, acno: '', ifsc: '', comm: num(LL.find(l => l.mode === 'bank' && l.bank === name)!.comm) }));
+    const dealers = nd.map(name => ({ name, comm: num(LL.find(l => l.mode === 'home' && l.dealer === name)!.comm) }));
+    const rows: BillRow[] = LL.map(l => {
       if (l.phone) accounts.push({ name: l.desc, type: 'party', phone: l.phone });
       if (l.stock && !stockOf[l.cur]) stockOf[l.cur] = l.stock;
       return { desc: l.desc, cur: l.cur, base: l.base, qty: num(l.qty), prate: l.side === 'p' ? num(l.rate) : 0, srate: l.side === 's' ? num(l.rate) : 0,
-        stock: l.stock, mode: l.mode, bank, dealer, comm: num(l.comm) };
+        stock: l.stock, mode: l.mode, bank: l.mode === 'bank' ? l.bank : '', dealer: l.mode === 'home' ? l.dealer : '', comm: num(l.comm) };
     });
     const remap: Record<number, number> = {};
-    this.lines.forEach((l, i) => { if (l.orig !== undefined) remap[l.orig] = i; });
+    LL.forEach((l, i) => { if (l.orig !== undefined) remap[l.orig] = i; });
     const r = await this.store.save('post', '/bills', {
       bill: { id: this.editId || undefined, no: this.no, date: this.date, rows }, remap, accounts, banks, dealers,
-      settings: { stockOf, lastMode: this.L.mode },
+      settings: { stockOf, lastMode: LL[LL.length - 1].mode },
     });
     if (r) { this.ui.toast('Bill ' + r.no + ' saved'); this.newBill(); }
   }
-  newBill() { const d = this.date; this.editId = null; this.lines = []; this.LE = -1; this.L = this.newLine(this.L.cur, this.L.side, this.L.mode); this.date = d; this.no = String(this.E().nextBillNo()); }
+  newBill() {
+    const last = this.rows.filter(l => this.filled(l)).pop() || this.rows[this.rows.length - 1];
+    this.editId = null; this.rows = [this.newLine(last)]; this.no = String(this.E().nextBillNo());
+  }
   openBill(b: Bill) {
-    this.editId = b.id; this.no = b.no; this.date = b.date; this.LE = -1;
-    this.lines = b.rows.map((r, i) => ({ desc: r.desc, phone: this.S().accounts[r.desc]?.phone || '', side: this.E().rowSide(r), cur: r.cur, base: r.base,
+    this.editId = b.id; this.no = b.no; this.date = b.date;
+    this.rows = b.rows.map((r, i) => ({ desc: r.desc, phone: this.S().accounts[r.desc]?.phone || '', side: this.E().rowSide(r), cur: r.cur, base: r.base,
       qty: String(r.qty), rate: String(this.E().rowRate(r)), inv: this.invCur(r.cur) ? String(+(1 / this.E().rowRate(r)).toFixed(6)) : '',
-      stock: r.stock, mode: r.mode, bank: r.bank || 'BANK', dealer: r.dealer, comm: r.comm ? String(r.comm) : '', nbName: '', nbAc: '', nbIfsc: '', ndName: '', orig: i }));
-    this.L = this.newLine(this.lines[0]?.cur); window.scrollTo(0, 0);
+      stock: r.stock, mode: r.mode, bank: r.bank || 'BANK', dealer: r.dealer, comm: r.comm ? String(r.comm) : '', orig: i }));
+    this.rows.push(this.newLine(this.rows[this.rows.length - 1]));
+    window.scrollTo(0, 0);
   }
 
   /* ---------- saved bills & payments ---------- */

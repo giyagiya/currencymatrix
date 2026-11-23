@@ -31,6 +31,15 @@ export class SetupComponent {
     this.store.save('put', '/settings', { currencies: [...this.S().currencies, c] }, '✓ ' + c + ' added').then(r => { if (r) this.newCur = ''; }); }
   usedCur(c: string) { return this.S().bills.some(b => b.rows.some(r => r.cur === c || r.base === c)) || this.S().jv.some(j => j.cur === c); }
   delCur(c: string) { this.store.save('put', '/settings', { currencies: this.S().currencies.filter(x => x !== c) }, c + ' removed'); }
+  /** Enter in a list of boxes: go to the next box in the same card (leaving a box saves it); on the last box it just saves. */
+  nextIn(e: Event) {
+    const el = e.target as HTMLInputElement;
+    if (el.tagName !== 'INPUT') return;
+    e.preventDefault();
+    const boxes = Array.from((e.currentTarget as HTMLElement).querySelectorAll<HTMLInputElement>('input:not([disabled])'));
+    const nx = boxes[boxes.indexOf(el) + 1];
+    if (nx) { nx.focus(); nx.select(); } else el.blur();
+  }
   setStock(cur: string, v: string) { const so = { ...this.S().stockOf }; if (U(v)) so[cur] = U(v); else delete so[cur]; this.store.save('put', '/settings', { stockOf: so }, '✓ Saved'); }
 
   /* accounts */

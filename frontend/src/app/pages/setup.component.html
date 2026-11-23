@@ -42,7 +42,7 @@
       <div class="chips">@for (c of S().currencies; track c) { <span class="tag big">{{ c }} @if (!usedCur(c)) { <a (click)="delCur(c)" class="x">✕</a> }</span> }</div>
       <div class="row"><input [(ngModel)]="newCur" class="up" placeholder="e.g. EUR" (keydown.enter)="addCur()"><button (click)="addCur()">＋ Add currency</button></div>
     </div>
-    <div class="card">
+    <div class="card" (keydown.enter)="nextIn($event)">
       <h2 class="sech">Stock for each currency</h2>
       @for (c of S().currencies; track c) {
         <div class="row"><span class="w60"><b>{{ c }}</b></span><input [ngModel]="S().stockOf[c] || ''" (change)="setStock(c, $any($event.target).value)" class="up" placeholder="e.g. {{ c }}.COM"></div>
