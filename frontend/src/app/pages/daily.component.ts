@@ -47,5 +47,5 @@ export class DailyComponent {
   f = { from: '', to: '', party: '' };
   open = '';
   rows() { return this.E().dailyRows(this.f).slice().reverse(); }
-  billNos(x: { bills: Record<string, 1> }) { const k = Object.keys(x.bills); return k.length ? 'Bill ' + k.join(', ') : 'Cash & Bank only'; }
+  billNos(x: { bills: Record<string, 1> }) { const k = Object.keys(x.bills); return k.length ? 'Bill ' + k.join(', ') : 'Cash Book only'; }
 }

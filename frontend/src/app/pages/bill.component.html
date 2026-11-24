@@ -5,8 +5,9 @@
   <h2 class="sech">{{ editId ? '✏️ Edit bill' : '➕ New bill' }} <small>Bill {{ no }}</small></h2>
   <div class="bh">
     <div class="bh-f"><label>Date</label><input type="date" [(ngModel)]="date"></div>
-    <div class="bh-f"><label>Bill No.</label><input [(ngModel)]="no" inputmode="numeric"></div>
-    <label class="ck morecols" title="Stock, Price in and WhatsApp fill in by themselves – show them to change them">
+    <div class="bh-f"><label>Bill No.</label><input [(ngModel)]="no" inputmode="numeric" (change)="billNoChanged()" (keydown.enter)="billNoChanged()"
+      title="Type an earlier bill number to open it"></div>
+    <label class="ck morecols" title="Stock and WhatsApp stay empty unless you type them · Price in fills in by itself – show them to change them">
       <input type="checkbox" [checked]="more" (change)="toggleMore()"> More columns <small>Stock · Price in · WhatsApp</small></label>
   </div>
 
@@ -19,9 +20,9 @@
       @for (x of rows; track x; let i = $index) {
         <tr [class.pur]="filled(x) && x.side === 'p'" [class.sale]="filled(x) && x.side === 's'">
           <td class="idx">{{ i + 1 }}</td>
-          <td class="desc"><input [(ngModel)]="x.desc" (ngModelChange)="trail()" (blur)="partyPhone(x)" list="dl-acc" class="up" autocomplete="off" placeholder="Name"></td>
+          <td class="desc"><input [(ngModel)]="x.desc" (ngModelChange)="trail()" list="dl-acc" class="up" autocomplete="off" placeholder="Name"></td>
           <td><select [(ngModel)]="x.side" class="side"><option value="p">Purchase</option><option value="s">Sale</option></select></td>
-          <td><select [(ngModel)]="x.cur" (ngModelChange)="curChanged(x)">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></td>
+          <td><select [(ngModel)]="x.cur">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></td>
           <td class="n"><input [(ngModel)]="x.qty" (ngModelChange)="trail()" inputmode="decimal" placeholder="0"></td>
           <td class="n">
             @if (invCur(x.cur)) { <input [(ngModel)]="x.inv" (ngModelChange)="invChanged(x); trail()" inputmode="decimal" [placeholder]="'1 ' + x.base + ' = ? ' + x.cur" data-enter="row"> }
@@ -33,9 +34,9 @@
             @else { <input disabled placeholder="—"> }</td>
           <td class="n"><input [(ngModel)]="x.comm" inputmode="decimal" placeholder="0"></td>
           @if (more) {
-            <td><input [(ngModel)]="x.stock" class="up" [placeholder]="'e.g. ' + x.cur + '.COM'"></td>
+            <td><input [(ngModel)]="x.stock" list="dl-stock" class="up" autocomplete="off" placeholder="None" [class.newname]="isNewStock(x.stock)" [title]="isNewStock(x.stock) ? 'New stock – added when you save' : 'Optional – pick a stock only when needed'"></td>
             <td><select [(ngModel)]="x.base">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></td>
-            <td><input [(ngModel)]="x.phone" inputmode="tel" placeholder="optional"></td>
+            <td><input [(ngModel)]="x.phone" inputmode="tel" placeholder="optional" autocomplete="off"></td>
           }
           <td><button class="x" (click)="removeRow(i)" title="Remove line">✕</button></td>
         </tr>
@@ -44,7 +45,7 @@
   </table></div>
 
   <div class="hint">Type one line per row – a new row appears by itself. <b>Enter</b> goes to the next box · <b>Enter</b> on Rate jumps to the next line
-    (Pay by, Bank, Commission… keep the row above's choice – change them with Tab or a click). A new bank or dealer name is added when you save.</div>
+    (Pay by, Bank, Commission… keep the row above's choice – change them with Tab or a click). A new bank, dealer or stock name is added when you save.</div>
 
   @if (totals(); as t) {
     <div class="tots">
@@ -70,39 +71,57 @@
       <button [class.on]="BF === 'pending'" (click)="BF = 'pending'">Pending{{ pendingCount() ? ' (' + pendingCount() + ')' : '' }}</button>
       <button [class.on]="BF === 'paid'" (click)="BF = 'paid'">Settled</button>
     </div></div>
-  <input [(ngModel)]="q" placeholder="Search bill no., name, stock, currency" class="search">
+  <input [(ngModel)]="q" [placeholder]="limited() ? 'Search bill no., name' : 'Search bill no., name, stock, currency'" class="search">
   @for (b of shown(); track b.id) {
     <div class="bc">
       <div class="bc-h">
         <b>Bill {{ b.no }}</b> <span class="sub">· {{ dmy(b.date) }}</span>
-        @if (E().billState(b); as st) {
-          <span class="chip" [class.done]="st.paid === st.n" [class.pend]="st.paid < st.n">{{ st.paid === st.n ? '✓ All settled' : (st.n - st.paid) + ' pending' }}</span>
+        @if (visState(b); as st) {
+          <span class="chip" [class.done]="st.paid === st.n" [class.pend]="st.paid < st.n">{{ st.paid === st.n ? '✓ All settled' : (st.n - st.paid) + ' pending' + (st.part ? ' (' + st.part + ' part paid)' : '') }}</span>
         }
-        @if (billSums(b); as s) { <span class="sub">Diff {{ m(s.diff) }}{{ s.comm ? ' · Comm ' + m(s.comm) : '' }} · <b>Net {{ m(s.net) }}</b></span> }
+        @if (!limited()) { @if (billSums(b); as s) { <span class="sub">Diff {{ m(s.diff) }}{{ s.comm ? ' · Comm ' + m(s.comm) : '' }} · <b>Net {{ m(s.net) }}</b></span> } }
         <span class="flex"></span>
         @if (auth.canPage('bill')) { <button class="sm" (click)="openBill(b)">✏️ Edit</button> }
         <button class="sm danger" (click)="delBill(b)">🗑</button>
       </div>
       @for (r of b.rows; track $index; let i = $index) {
+        @if (lineVisible(r)) {
         <div class="bl">
           <div class="bl-m"><b>{{ r.desc }}</b>
-            <span class="rt" [class.rbp]="E().rowSide(r) === 'p'" [class.rbs]="E().rowSide(r) === 's'">{{ E().rowSide(r) === 'p' ? 'Purchase' : 'Sale' }}</span>
-            <div class="sub">{{ r.cur }} {{ m(r.qty) }} {{ E().rateShort(r.cur, E().rowRate(r)) }} · {{ r.stock }} · {{ MIC[r.mode] }} {{ PMODES[r.mode] }}{{ r.dealer ? ' (' + r.dealer + ')' : '' }}{{ r.bank ? ' (' + r.bank + ')' : '' }}</div></div>
+            <span class="rt" [class.rbp]="E().rowSide(r) === 'p'" [class.rbs]="E().rowSide(r) === 's'">{{ limited() ? 'To pay' : E().rowSide(r) === 'p' ? 'Purchase' : 'Sale' }}</span>
+            <div class="sub">@if (!limited()) { {{ r.cur }} {{ m(r.qty) }} {{ E().rateShort(r.cur, E().rowRate(r)) }} · {{ r.stock ? r.stock + ' · ' : '' }} }{{ MIC[r.mode] }} {{ PMODES[r.mode] }}{{ r.dealer ? ' (' + r.dealer + ')' : '' }}{{ r.bank ? ' (' + r.bank + ')' : '' }}</div></div>
           <div class="bl-a" [class.neg]="E().rowSide(r) === 'p'" [class.pos]="E().rowSide(r) === 's'">₹{{ m(E().rowAmt(r)) }}</div>
           <div class="bl-b">
-            @if (E().payOf(b.id, i); as pj) {
-              <span class="chip done">✓ {{ E().rowSide(r) === 'p' ? 'Paid' : 'Received' }} {{ dmy(pj.date) }}</span>
-              <button class="sm" (click)="unpay(b, i)" title="Back to pending">↩</button>
-            } @else {
-              <button class="sm" [class.paybtn]="E().rowSide(r) === 'p'" [class.recvbtn]="E().rowSide(r) === 's'" (click)="openPay(b, i)">{{ E().rowSide(r) === 'p' ? '💸 Pay' : '💰 Receive' }}</button>
+            @if (E().lineState(b, i); as ls) {
+              @if (ls.st === 'paid') {
+                <span class="chip done">✓ {{ E().rowSide(r) === 'p' ? 'Paid' : 'Received' }} {{ dmy(ls.last!.date) }}</span>
+                <button class="sm" (click)="unpay(b, i)" title="Back to pending">↩</button>
+                <button class="sm wa" (click)="openSend(b, i)" title="Send this bill on WhatsApp">📤 Send bill</button>
+              } @else {
+                @if (ls.st === 'part') {
+                  <span class="chip part" [title]="E().paysOf(b.id, i).length + ' payment(s) so far'">Part {{ E().rowSide(r) === 'p' ? 'paid' : 'received' }} ₹{{ m(ls.paid) }} · ₹{{ m(ls.due) }} pending</span>
+                  <button class="sm" (click)="unpay(b, i)" title="Back to pending">↩</button>
+                }
+                <button class="sm" [class.paybtn]="E().rowSide(r) === 'p'" [class.recvbtn]="E().rowSide(r) === 's'" (click)="openPay(b, i)">{{ E().rowSide(r) === 'p' ? '💸 Pay' : '💰 Receive' }}</button>
+              }
             }
-            @if (phoneOf(r.desc)) { <a class="sm wa" [href]="waLink(b, r.desc)" target="_blank" rel="noopener">💬 WhatsApp</a> }
-            @else { <button class="sm" (click)="phoneKey = b.id + ':' + i; phoneVal = ''" title="Add WhatsApp number">💬 +</button> }
+            @if (!limited()) {
+              @if (phoneOf(r.desc)) { <a class="sm wa" [href]="waLink(b, r.desc)" target="_blank" rel="noopener">💬 WhatsApp</a>
+                <button class="sm" (click)="phoneKey = b.id + ':' + i; phoneVal = phoneOf(r.desc)" title="Change or remove the WhatsApp number">✏️</button> }
+              @else { <button class="sm" (click)="phoneKey = b.id + ':' + i; phoneVal = ''" title="Add WhatsApp number">💬 +</button> }
+            }
           </div>
         </div>
         @if (phoneKey === b.id + ':' + i) {
-          <div class="paypanel"><label>WhatsApp number for {{ r.desc }}</label>
-            <div class="row"><input [(ngModel)]="phoneVal" inputmode="tel" placeholder="10-digit mobile"><button class="pr" (click)="savePhone(r.desc)">Save</button><button (click)="phoneKey = null">Cancel</button></div></div>
+          <div class="paypanel"><label>WhatsApp number for {{ r.desc }}{{ phoneOf(r.desc) ? ' – change it, or clear the box and Save to remove it' : '' }}</label>
+            <div class="row"><input [(ngModel)]="phoneVal" inputmode="tel" placeholder="10-digit mobile" autocomplete="off"><button class="pr" (click)="savePhone(r.desc)">Save</button><button (click)="phoneKey = null">Cancel</button></div></div>
+        }
+        @if (sendKey === b.id + ':' + i) {
+          <div class="paypanel"><label>Send Bill {{ b.no }} – {{ r.desc }} on WhatsApp</label>
+            <div class="row"><input id="send-ph" [(ngModel)]="sendPhone" inputmode="tel" placeholder="WhatsApp number" autocomplete="off" (keydown.enter)="sendBill(b, i)">
+              <button class="pr" (click)="sendBill(b, i)">📤 Send</button><button (click)="sendKey = null">Cancel</button></div>
+            <pre class="msgprev">{{ billMsg(b, i) }}</pre>
+            <div class="hint">WhatsApp opens with this message – press send there. A 10-digit number gets +91 added; for other countries start with + (e.g. +65…).</div></div>
         }
         @if (payKey() === b.id + ':' + i && PY) {
           <div class="paypanel">
@@ -134,12 +153,14 @@
             </div>
           </div>
         }
+        }
       }
     </div>
-  } @empty { <div class="empty">No bills yet.</div> }
+  } @empty { <div class="empty">{{ limited() ? 'Nothing to pay.' : 'No bills yet.' }}</div> }
 </div>
 }
 
 <datalist id="dl-acc">@for (a of E().allAccounts(); track a) { <option [value]="a"></option> }</datalist>
 <datalist id="dl-bank"><option value="BANK"></option>@for (b of S().banks; track b.name) { <option [value]="b.name"></option> }</datalist>
 <datalist id="dl-dealer">@for (d of S().dealers; track d.name) { <option [value]="d.name"></option> }</datalist>
+<datalist id="dl-stock">@for (s of stockNames(); track s) { <option [value]="s"></option> }</datalist>

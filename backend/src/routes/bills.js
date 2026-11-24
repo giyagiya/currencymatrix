@@ -31,7 +31,8 @@ r.post('/bills', needPage('bill'), async (req, res) => {
     await patchSettings(db, req.body.settings, SAFE_SETTINGS);
     for (const x of rows) {
       await ensureAccounts(db, [{ name: x.desc, type: 'party' }]);
-      if (x.stock) await ensureAccounts(db, [{ name: x.stock, type: 'stock' }]);
+      // currency goes to the stock company, or (no Stock) to our own "SGD STOCK"
+      await ensureAccounts(db, [{ name: x.stock || x.cur + ' STOCK', type: 'stock' }]);
     }
     let id = b.id;
     const exists = id ? (await db.query('SELECT 1 FROM bills WHERE id=$1', [id])).rows.length : 0;
@@ -53,8 +54,9 @@ r.post('/bills', needPage('bill'), async (req, res) => {
         const nr = rows[ni], purchase = nr.prate > 0;
         const counterIsMoney = ['bank', 'cash', 'dealer'].includes((await db.query('SELECT type FROM accounts WHERE name=$1', [j.dr])).rows[0]?.type);
         const ac = counterIsMoney ? j.dr : j.cr;
+        const bookTo = nr.stock || nr.desc;   // a line with a Stock is booked to the stock company, so its payment settles that account
         await db.query('UPDATE jv SET link_line=$2, dr=$3, cr=$4, type=$5 WHERE id=$1',
-          [j.id, ni, purchase ? nr.desc : ac, purchase ? ac : nr.desc, purchase ? 'payment' : 'receipt']);
+          [j.id, ni, purchase ? bookTo : ac, purchase ? ac : bookTo, purchase ? 'payment' : 'receipt']);
       }
     } else {
       id = id || newId();

@@ -1,6 +1,6 @@
 # Remit – Angular + Node.js + PostgreSQL
 
-Currency exchange / remittance accounting: multi-line purchase & sale bills, payments (bank / shop cash / home delivery with commission per lakh), Cash & Bank vouchers, capital, balance sheet per currency, total profit, daily summary, ledger, WhatsApp bill messages, and logins (Super admin / Master / User) with page access and a delete password.
+Currency exchange / remittance accounting: multi-line purchase & sale bills, payments (bank / shop cash / home delivery with commission per lakh), Cash Book vouchers, capital, balance sheet per currency, total profit, daily summary, ledger, WhatsApp bill messages, and logins (Super admin / Master / User) with page access and a delete password.
 
 ```
 remit/
@@ -54,7 +54,7 @@ cd frontend && npx ng serve         # site on :4200 (talks to :3000, see src/env
 ## 5. First login
 1. Open the site – it asks you to **create the Super admin** (name + 4–6 number PIN).
 2. **Setup → Users & login**: add Master / User logins and tick the pages each one can open
-   (🧾 Bill entry, 💳 Bills & payments, 💵 Cash & Bank, ⚖️ Balance, 📅 Daily, 📒 Ledger).
+   (🧾 Bill entry, 💳 Bills & payments, 💵 Cash Book, ⚖️ Balance, 📅 Daily, 📒 Ledger).
 3. **Setup → Delete password**: set the 4-number password Master / User need to delete anything.
 4. **Moving from the old single-file Remit app**: in the old app open Setup → Backup → download,
    then in the new app Setup → Backup → **Import backup**. (Logins and delete password are set again in the new app.)
@@ -88,7 +88,7 @@ Other options: **Render / Railway** (Web Service: build `cd backend && npm insta
 | GET | /book | logged in – whole book, the app calculates from it |
 | POST | /bills | Bill entry |
 | DELETE | /bills/:id | Bill entry or Bills & payments + delete password |
-| POST | /jv | Cash & Bank (vouchers) · Bills & payments (payments) · Balance (capital) |
+| POST | /jv | Cash Book (vouchers) · Bills & payments (payments) · Balance (capital) |
 | DELETE | /jv/:id, /payments/:bill/:line | + delete password |
 | PUT | /settings, /accounts/:name · POST /accounts/rename | Super admin |
 | POST/PUT/DELETE | /users, /delete-pin | Super admin |

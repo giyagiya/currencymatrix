@@ -1,7 +1,7 @@
 const r = require('express').Router();
 const { tx } = require('../db');
 const { requireAuth, needPage, checkDeletePin, canPage } = require('../auth');
-const { U, num, newId, isDate, bad, HttpError } = require('../util');
+const { U, num, r2, newId, isDate, bad, HttpError } = require('../util');
 const { ensureAccounts, upsertBanks, upsertDealers, patchSettings, nextJvNo, checkJv, insertJv, audit, SAFE_SETTINGS, loadBook } = require('../book');
 
 r.use(requireAuth);
@@ -28,11 +28,15 @@ r.post('/jv', async (req, res) => {
     for (const e of entries) {
       if (!isDate(e.date)) throw bad('Enter a valid date');
       if (e.link && e.link.bill) {
-        const ok = (await db.query('SELECT 1 FROM bill_rows WHERE bill_id=$1 AND line=$2', [e.link.bill, e.link.line])).rows.length;
-        if (!ok) throw bad('Bill line not found – refresh and try again');
+        const line = (await db.query('SELECT qty,prate,srate FROM bill_rows WHERE bill_id=$1 AND line=$2', [e.link.bill, e.link.line])).rows[0];
+        if (!line) throw bad('Bill line not found – refresh and try again');
         if (!e.link.comm) {
-          const dup = (await db.query('SELECT 1 FROM jv WHERE link_bill=$1 AND link_line=$2 AND NOT link_comm', [e.link.bill, e.link.line])).rows.length;
-          if (dup) throw bad('This bill line is already paid');
+          // a line may be paid in parts; refuse only when nothing is left or the amount is more than what is pending (₹1 rounding allowed)
+          const lineAmt = r2(num(line.qty) * (num(line.prate) || num(line.srate)));
+          const paid = num((await db.query('SELECT COALESCE(SUM(amt),0) AS s FROM jv WHERE link_bill=$1 AND link_line=$2 AND NOT link_comm', [e.link.bill, e.link.line])).rows[0].s);
+          const due = r2(Math.max(0, lineAmt - paid));
+          if (due < 1) throw bad('This bill line is already paid');
+          if (r2(num(e.amt)) - due >= 1) throw bad('Only ₹' + due.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ' is pending on this bill line');
         }
       }
       for (const a of [e.dr, e.cr]) await ensureAccounts(db, [{ name: a, type: 'party' }]);
@@ -45,7 +49,7 @@ r.post('/jv', async (req, res) => {
   res.json({ ok: true, ...out, book: await loadBook(undefined, req.user) });
 });
 
-/* Edit one voucher line (Cash & Bank). Bill payments are changed from Bills & payments (undo + pay again).
+/* Edit one voucher line (Cash Book). Bill payments are changed from Bills & payments (undo + pay again).
    body: { entry:{date,vno,type,desc,dr,cr,cur,amt,note,mode,bank}, accounts?:[{name,type}] } */
 r.put('/jv/:id', needPage('jv'), async (req, res) => {
   const e = req.body.entry || {};
@@ -80,7 +84,7 @@ r.delete('/jv/:id', needPage(['jv', 'pay']), async (req, res) => {
   res.json({ ok: true, book: await loadBook(undefined, req.user) });
 });
 
-// Undo a bill payment (back to pending) – removes the payment and its commission
+// Undo a bill line's payments (back to pending) – removes every payment of the line and their commission
 r.delete('/payments/:bill/:line', needPage(['pay', 'bill']), async (req, res) => {
   await checkDeletePin(req);
   await tx(async db => {

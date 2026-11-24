@@ -42,12 +42,15 @@ export const TYPES: Record<AccType, string> = {
 };
 export const PMODES: Record<string, string> = { bank: 'Bank', shop: 'Shop cash', home: 'Home delivery' };
 export const MIC: Record<string, string> = { bank: '🏦', shop: '🏪', home: '🏠' };
-export const VM: Record<string, string> = { cash: 'Cash', bank: 'Bank', shop: 'Shop cash', home: 'Home delivery' };
+export const VM: Record<string, string> = { cash: 'Cash', hand: 'Hand cash', bank: 'Bank', shop: 'Shop cash', home: 'Home delivery' };
+/** Cash Book modes: Cash → CASH, Hand cash → HAND CASH (its own cash account), Bank → the chosen bank. */
+export type CbMode = 'cash' | 'hand' | 'bank';
+export const HAND_CASH = 'HAND CASH';
 export const JTYPES: Record<string, string> = {
   receipt: 'Receipt', payment: 'Payment', transfer: 'Transfer', expense: 'Expense',
   journal: 'Journal', capital: 'Capital', out: 'OUT', in: 'IN',
 };
 export const PAGES: [Page, string][] = [
-  ['bill', '🧾 Bill entry'], ['pay', '💳 Bills & payments'], ['jv', '💵 Cash & Bank'],
+  ['bill', '🧾 Bill entry'], ['pay', '💳 Bills & payments'], ['jv', '💵 Cash Book'],
   ['sheet', '⚖️ Balance'], ['daily', '📅 Daily'], ['ledger', '📒 Ledger'],
 ];

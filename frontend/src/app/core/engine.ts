@@ -21,12 +21,19 @@ export interface JvView { desc: string; dir: 'in' | 'out' | 'exp'; mode: string;
 export class Engine {
   constructor(public S: Book) {}
 
-  accType(n: string): AccType { return (this.S.accounts[n] || ({} as any)).type || 'party'; }
+  accType(n: string): AccType { return this.S.accounts[n]?.type || (this.isOwnStock(n) ? 'stock' : 'party'); }
+  /** Our own stock of a currency, e.g. "SGD STOCK": holds the currency of bill lines that have no Stock. */
+  ownStock(cur: string) { return cur + ' STOCK'; }
+  isOwnStock(n: string) { return / STOCK$/.test(n) && this.allCurs().some(c => n === this.ownStock(c)); }
   invCur(c: string) { return c === this.S.base; }
   rowSide(r: BillRow): 'p' | 's' { return num(r.prate) > 0 ? 'p' : 's'; }
   rowRate(r: BillRow) { return num(r.prate) || num(r.srate); }
   rowAmt(r: BillRow) { return r2(num(r.qty) * this.rowRate(r)); }
   rowComm(r: BillRow) { return r2(this.rowAmt(r) * num(r.comm) / 100000); }
+  /** Account the rupee amount of a bill line is booked to: the stock company when Stock is filled, otherwise the party. Its payment / receipt settles this account too. */
+  rowAcct(r: BillRow) { return r.stock || r.desc; }
+  /** Account the currency of a bill line is booked to: the stock company when Stock is filled, otherwise our own stock ("SGD STOCK"). */
+  rowStock(r: BillRow) { return r.stock || this.ownStock(r.cur); }
   rateShort(cur: string, rate: number) { rate = num(rate); return this.invCur(cur) ? '÷ ' + (+(1 / rate).toFixed(6)) : '@ ' + rate; }
   allCurs() { return [this.S.base].concat(this.S.currencies.filter(c => c !== this.S.base)); }
   allAccounts() { return Object.keys(this.S.accounts).sort(); }
@@ -37,14 +44,14 @@ export class Engine {
     const P: Posting[] = [], S = this.S;
     S.bills.forEach(b => b.rows.forEach(r => {
       const q = num(r.qty); if (!r.desc || !q) return;
-      const base = r.base || S.base, ref = 'Bill ' + b.no;
+      const base = r.base || S.base, ref = 'Bill ' + b.no, acct = this.rowAcct(r), stk = this.rowStock(r), who = r.stock ? ' · ' + r.desc : '';
       if (num(r.prate) > 0) {
-        P.push({ date: b.date, ref, acct: r.desc, cur: base, dr: 0, cr: r2(q * num(r.prate)), txt: 'Purchase ' + r.cur + ' ' + m(q) + ' @ ' + num(r.prate) });
-        P.push({ date: b.date, ref, acct: r.stock || r.desc, cur: r.cur, dr: q, cr: 0, txt: 'Purchase from ' + r.desc + ' @ ' + num(r.prate) });
+        P.push({ date: b.date, ref, acct, cur: base, dr: 0, cr: r2(q * num(r.prate)), txt: 'Purchase ' + r.cur + ' ' + m(q) + ' @ ' + num(r.prate) + who });
+        P.push({ date: b.date, ref, acct: stk, cur: r.cur, dr: q, cr: 0, txt: 'Purchase from ' + r.desc + ' @ ' + num(r.prate) });
       }
       if (num(r.srate) > 0) {
-        P.push({ date: b.date, ref, acct: r.desc, cur: base, dr: r2(q * num(r.srate)), cr: 0, txt: 'Sale ' + r.cur + ' ' + m(q) + ' @ ' + num(r.srate) });
-        P.push({ date: b.date, ref, acct: r.stock || r.desc, cur: r.cur, dr: 0, cr: q, txt: 'Sale to ' + r.desc + ' @ ' + num(r.srate) });
+        P.push({ date: b.date, ref, acct, cur: base, dr: r2(q * num(r.srate)), cr: 0, txt: 'Sale ' + r.cur + ' ' + m(q) + ' @ ' + num(r.srate) + who });
+        P.push({ date: b.date, ref, acct: stk, cur: r.cur, dr: 0, cr: q, txt: 'Sale to ' + r.desc + ' @ ' + num(r.srate) });
       }
     }));
     S.jv.forEach(j => {
@@ -68,28 +75,32 @@ export class Engine {
   }
   curOrder(B: Record<string, unknown>) { const o = this.allCurs().slice(); Object.keys(B).forEach(c => { if (o.indexOf(c) < 0) o.push(c); }); return o; }
 
-  avgPRate(cur: string) {
-    let q = 0, a = 0;
-    this.S.bills.forEach(b => b.rows.forEach(r => {
-      if (r.cur === cur && (r.base || this.S.base) === this.S.base && num(r.prate) > 0) { q += num(r.qty); a += num(r.qty) * num(r.prate); }
-    }));
-    return q ? a / q : 0;
-  }
-  avgPRateTo(cur: string, to?: string) {
-    let q = 0, a = 0, sq = 0, sa = 0;
-    this.S.bills.forEach(b => {
-      if (to && b.date > to) return;
-      b.rows.forEach(r => {
-        if (r.cur !== cur || (r.base || this.S.base) !== this.S.base) return;
-        if (num(r.prate) > 0) { q += num(r.qty); a += num(r.qty) * num(r.prate); }
-        else if (num(r.srate) > 0) { sq += num(r.qty); sa += num(r.qty) * num(r.srate); }
-      });
+  /** Rate (in base currency) used to value a currency up to a date = average cost of what we still hold (moving average).
+   *  Day by day: a purchase adds to the holding at its rate, a sale takes out at the current average (so sold currency
+   *  no longer counts). Within one day purchases are counted before sales, so the order lines are typed in does not matter.
+   *  Selling more than we hold opens a short position at the sale rate. Lines priced in this currency (e.g. INR priced in USDT) count too. */
+  costRate(cur: string, to?: string) {
+    const base = this.S.base, moves: { d: string; q: number; rate: number }[] = [];   // q > 0: we get the currency · q < 0: we give it
+    this.S.bills.forEach(b => { if (!to || b.date <= to) b.rows.forEach(r => {
+      const rb = r.base || base, qty = num(r.qty), buy = this.rowSide(r) === 'p', rate = this.rowRate(r);
+      if (!qty || !(rate > 0)) return;
+      if (r.cur === cur && rb === base) moves.push({ d: b.date, q: buy ? qty : -qty, rate });
+      else if (rb === cur && r.cur === base) { const amt = qty * rate; moves.push({ d: b.date, q: buy ? -amt : amt, rate: qty / amt }); }
+    }); });
+    moves.sort((x, y) => x.d < y.d ? -1 : x.d > y.d ? 1 : (y.q > 0 ? 1 : 0) - (x.q > 0 ? 1 : 0));
+    let h = 0, a = 0;
+    moves.forEach(({ q, rate }) => {
+      if (h === 0 || Math.sign(h) === Math.sign(q)) { a = (Math.abs(h) * a + Math.abs(q) * rate) / (Math.abs(h) + Math.abs(q)); h += q; }
+      else if (Math.abs(q) <= Math.abs(h)) h += q;   // takes from the holding: average cost unchanged
+      else { h += q; a = rate; }                      // goes past zero: the rest opens at this rate
+      if (Math.abs(h) < 1e-9) h = 0;
     });
-    return q ? a / q : (sq ? sa / sq : 0);
+    return a;
   }
-  curRate(c: string) { return c === this.S.base ? 1 : (this.S.valRate && num(this.S.valRate[c]) ? num(this.S.valRate[c]) : this.avgPRate(c)); }
+  /** Same rate for Total profit and Daily profit, unless a rate is set on the Balance page. */
+  curRate(c: string) { return c === this.S.base ? 1 : (this.S.valRate && num(this.S.valRate[c]) ? num(this.S.valRate[c]) : this.costRate(c)); }
 
-  /** Total profit in base currency = everything we hold (at average buy rate) − capital. */
+  /** Total profit in base currency = everything we hold (currency at its average cost) − capital. */
   totalProfit() {
     const B = this.balances(), res = { base: this.S.base, parts: [] as ProfitPart[], cap: 0, value: 0, total: 0 };
     this.curOrder(B).forEach(c => {
@@ -107,18 +118,35 @@ export class Engine {
     Object.keys(B).forEach(c => {
       const A = B[c]; let net = 0, cap = 0;
       Object.keys(A).forEach(a => { const t = this.accType(a); if (t === 'capital') cap -= A[a]; else if (t !== 'expense') net += A[a]; });
-      tot += (net - cap) * (c === this.S.base ? 1 : this.avgPRateTo(c, d));
+      tot += (net - cap) * (c === this.S.base ? 1 : this.costRate(c, d));
     });
     return tot;
   }
 
-  payOf(bid: string, i: number) { return this.S.jv.find(j => j.link && j.link.bill === bid && j.link.line === i && !j.link.comm); }
+  /** Bill lines booked to this account (in this currency) that are not fully paid yet. */
+  pendingLines(acct: string, cur: string) {
+    const out: { no: string; due: number }[] = [];
+    this.S.bills.forEach(b => b.rows.forEach((r, i) => {
+      if (this.rowAcct(r) !== acct || (r.base || this.S.base) !== cur) return;
+      const ls = this.lineState(b, i); if (ls.st !== 'paid') out.push({ no: b.no, due: ls.due });
+    }));
+    return out;
+  }
+  /** All payments / receipts made against one bill line (commission entries left out), oldest first. */
+  paysOf(bid: string, i: number) { return this.S.jv.filter(j => j.link && j.link.bill === bid && j.link.line === i && !j.link.comm); }
+  /** Latest payment of a line (undefined = nothing paid yet). */
+  payOf(bid: string, i: number) { const p = this.paysOf(bid, i); return p[p.length - 1]; }
+  /** How much of a bill line is paid and what is still due. A line is settled when less than ₹1 is left. */
+  lineState(b: Bill, i: number): { amt: number; paid: number; due: number; last?: Jv; st: 'pending' | 'part' | 'paid' } {
+    const amt = this.rowAmt(b.rows[i]), pays = this.paysOf(b.id, i), paid = r2(pays.reduce((s, j) => s + num(j.amt), 0)), due = r2(Math.max(0, amt - paid));
+    return { amt, paid, due, last: pays[pays.length - 1], st: !pays.length ? 'pending' : due < 1 ? 'paid' : 'part' };
+  }
   jvKind(j: Jv): { k: string; p?: string } {
-    const dt = this.accType(j.dr), ct = this.accType(j.cr), cb = (t: string) => t === 'cash' || t === 'bank';
+    const dt = this.accType(j.dr), ct = this.accType(j.cr), cb = (t: string) => t === 'cash' || t === 'bank', pt = (t: string) => t === 'party' || t === 'stock';
     if (j.link && j.link.comm) return { k: 'comm' };
     if (dt === 'expense') return { k: 'exp' };
-    if (dt === 'party' && (cb(ct) || ct === 'dealer')) return { k: 'paid', p: j.dr };
-    if (ct === 'party' && (cb(dt) || dt === 'dealer')) return { k: 'recv', p: j.cr };
+    if (pt(dt) && (cb(ct) || ct === 'dealer')) return { k: 'paid', p: j.dr };
+    if (pt(ct) && (cb(dt) || dt === 'dealer')) return { k: 'recv', p: j.cr };
     return { k: '' };
   }
   jvRow(j: Jv): JvView {
@@ -157,7 +185,12 @@ export class Engine {
   }
   nextBillNo() { let mx = 0; this.S.bills.forEach(b => { const n = parseInt(b.no, 10); if (n > mx) mx = n; }); return mx + 1; }
   nextVno() { let mx = 0; this.S.jv.forEach(j => { const n = parseInt(j.vno, 10); if (n > mx) mx = n; }); return mx + 1; }
-  billState(b: Bill) { let pd = 0; b.rows.forEach((r, i) => { if (this.payOf(b.id, i)) pd++; }); return { n: b.rows.length, paid: pd }; }
+  /** paid = lines fully settled, part = lines partly paid (still pending). */
+  billState(b: Bill) {
+    let pd = 0, pt = 0;
+    b.rows.forEach((_, i) => { const s = this.lineState(b, i).st; if (s === 'paid') pd++; else if (s === 'part') pt++; });
+    return { n: b.rows.length, paid: pd, part: pt };
+  }
 
   /** Balance sheet blocks, one per currency. */
   sheetData(f: SheetFilter = {}): SheetBlock[] {
@@ -186,7 +219,7 @@ export class Engine {
     const S = this.S, days: Record<string, DayRow> = {}, P = U(f.party);
     const g = (d: string) => days[d] = days[d] || { d, bills: {}, pur: 0, sale: 0, paid: 0, recv: 0, comm: 0, exp: 0, profit: null, diff: 0 };
     S.bills.forEach(b => b.rows.forEach(r => {
-      if ((r.base || S.base) !== S.base) return; if (P && r.desc !== P) return;
+      if ((r.base || S.base) !== S.base) return; if (P && this.rowAcct(r) !== P) return;
       const x = g(b.date); x.bills[b.no] = 1;
       if (num(r.prate) > 0) x.pur += r2(num(r.qty) * num(r.prate));
       if (num(r.srate) > 0) x.sale += r2(num(r.qty) * num(r.srate));
@@ -196,7 +229,7 @@ export class Engine {
       if (K.k === 'paid') { if (P && K.p !== P) return; g(j.date).paid += j.amt; }
       else if (K.k === 'recv') { if (P && K.p !== P) return; g(j.date).recv += j.amt; }
       else if (K.k === 'comm' || K.k === 'exp') {
-        if (P && !(j.link && S.bills.some(b => b.id === j.link!.bill && b.rows[j.link!.line] && b.rows[j.link!.line].desc === P))) return;
+        if (P && !(j.link && S.bills.some(b => b.id === j.link!.bill && b.rows[j.link!.line] && this.rowAcct(b.rows[j.link!.line]) === P))) return;
         (g(j.date) as any)[K.k] += j.amt;
       }
     });
@@ -215,10 +248,11 @@ export class Engine {
     S.bills.forEach(b => {
       if (b.date !== d) return;
       b.rows.forEach(r => {
-        if ((r.base || S.base) !== S.base) return; if (Pf && r.desc !== Pf) return;
-        const x = g(r.desc), a = r2(num(r.qty) * this.rowRate(r));
-        if (num(r.prate) > 0) { x.pur += a; x.pq.push(r.cur + ' ' + m(num(r.qty)) + ' ' + this.rateShort(r.cur, num(r.prate))); }
-        else { x.sale += a; x.sq.push(r.cur + ' ' + m(num(r.qty)) + ' ' + this.rateShort(r.cur, num(r.srate))); }
+        if ((r.base || S.base) !== S.base) return; if (Pf && this.rowAcct(r) !== Pf) return;
+        const x = g(this.rowAcct(r)), a = r2(num(r.qty) * this.rowRate(r));
+        const who = r.stock ? ' · ' + r.desc : '';
+        if (num(r.prate) > 0) { x.pur += a; x.pq.push(r.cur + ' ' + m(num(r.qty)) + ' ' + this.rateShort(r.cur, num(r.prate)) + who); }
+        else { x.sale += a; x.sq.push(r.cur + ' ' + m(num(r.qty)) + ' ' + this.rateShort(r.cur, num(r.srate)) + who); }
       });
     });
     S.jv.forEach(j => {

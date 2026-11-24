@@ -125,7 +125,7 @@ r.put('/delete-pin', needSuper, async (req, res) => {
 });
 
 /* ---------- reset (Super admin) ---------- */
-// what = 'entries': delete all bills and vouchers (payments, capital…). Accounts, banks, dealers and settings stay.
+// what = 'entries': delete all bills and vouchers (payments, capital…) and the saved WhatsApp numbers. Accounts, banks, dealers and settings stay.
 // what = 'all':     also delete accounts, banks, dealers and settings, back to a new install.
 // Logins and the delete password are always kept. The audit log keeps the record of the reset.
 const SCHEMA = path.join(__dirname, '..', '..', 'db', 'schema.sql');
@@ -135,12 +135,14 @@ r.post('/reset', needSuper, async (req, res) => {
   await tx(async db => {
     const jv = (await db.query('DELETE FROM jv')).rowCount;
     const bills = (await db.query('DELETE FROM bills')).rowCount;   // bill rows go with them
+    // WhatsApp numbers come from entries – clear them too, so a new bill never shows a number nobody typed
+    const phones = (await db.query("UPDATE accounts SET phone='' WHERE phone<>''")).rowCount;
     if (what === 'all') {
       await db.query('DELETE FROM banks'); await db.query('DELETE FROM dealers'); await db.query('DELETE FROM accounts');
       await db.query("DELETE FROM settings WHERE key <> 'delPinHash'");
       await db.query(fs.readFileSync(SCHEMA, 'utf8'));   // puts back the default settings and accounts
     }
-    await audit(db, req.user.name, 'reset.' + what, { bills, jv });
+    await audit(db, req.user.name, 'reset.' + what, { bills, jv, phones });
   });
   res.json({ ok: true, book: await book(req) });
 });
@@ -172,7 +174,7 @@ r.post('/import', needSuper, async (req, res) => {
       let i = 0;
       for (const x of b.rows || []) {
         await ensureAccounts(db, [{ name: x.desc, type: 'party' }]);
-        if (x.stock) await ensureAccounts(db, [{ name: x.stock, type: 'stock' }]);
+        await ensureAccounts(db, [{ name: U(x.stock) || U(x.cur) + ' STOCK', type: 'stock' }]);   // stock company, or our own "SGD STOCK"
         await db.query(`INSERT INTO bill_rows(bill_id,line,descr,cur,base,qty,prate,srate,stock,mode,bank,dealer,comm)
           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
           [b.id, i++, U(x.desc), U(x.cur), U(x.base) || S.base || 'INR', num(x.qty), num(x.prate), num(x.srate), U(x.stock), ['bank', 'shop', 'home'].includes(x.mode) ? x.mode : 'bank', U(x.bank), U(x.dealer), num(x.comm)]);

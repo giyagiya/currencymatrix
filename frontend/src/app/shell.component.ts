@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, HostListener } from '@angular/core';
+import { Component, inject, OnInit, HostListener, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from './core/auth.service';
 import { StoreService } from './core/store.service';
@@ -9,6 +9,12 @@ import { UiService } from './shared/ui.service';
   standalone: true,
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
+  @if (!open()) {
+    <!-- after login / reload: a blank screen with one small icon in the top-right corner; click it to open the app -->
+    <div class="blank">
+      <button class="peek" (click)="show()" title="Open" aria-label="Open"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    </div>
+  } @else {
   <header class="topbar">
     <div class="tb-in">
       <h1 class="brand"><span class="logo">₹</span>Remit</h1>
@@ -21,6 +27,7 @@ import { UiService } from './shared/ui.service';
       </nav>
       <div class="tb-r">
         <span class="pill" [class.busy]="store.busy()"><i></i>{{ store.busy() ? 'Saving…' : 'Saved' }}</span>
+        <button class="hidebtn" (click)="hide()" title="Hide screen" aria-label="Hide screen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M1 1l22 22"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg></button>
         @if (auth.user(); as u) {
           <span class="uchip">
             <span class="av">{{ (u.name || '?').charAt(0).toUpperCase() }}</span>
@@ -34,6 +41,7 @@ import { UiService } from './shared/ui.service';
   <main>
     @if (store.book()) { <router-outlet /> } @else { <div class="empty">Loading…</div> }
   </main>
+  }
   `,
 })
 export class ShellComponent implements OnInit {
@@ -43,9 +51,13 @@ export class ShellComponent implements OnInit {
   router = inject(Router);
   roleName: Record<string, string> = { super: 'Super admin', master: 'Master', user: 'User' };
   nav: [string, string, string][] = [
-    ['bill', '🧾', 'Bill'], ['jv', '💵', 'Cash & Bank'], ['sheet', '⚖️', 'Balance'],
+    ['bill', '🧾', 'Bill'], ['jv', '💵', 'Cash Book'], ['sheet', '⚖️', 'Balance'],
     ['daily', '📅', 'Daily'], ['ledger', '📒', 'Ledger'], ['setup', '⚙', 'Setup'],
   ];
+  /** The app starts hidden after every login / reload (blank screen + one small icon); data still loads meanwhile. */
+  open = signal(false);
+  show() { this.open.set(true); }
+  hide() { this.open.set(false); }
   ngOnInit() { this.auth.refreshMe().catch(() => {}); this.store.load(); }
   logout() { this.auth.logout(); this.store.book.set(null); this.router.navigateByUrl('/login'); }
 

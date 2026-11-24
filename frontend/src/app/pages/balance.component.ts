@@ -78,7 +78,7 @@ import { m, num, today } from '../core/fmt';
           <tr class="bs-s"><td class="l">Less capital</td><td></td><td></td><td class="n">{{ m(-t.cap) }}</td></tr>
           <tr class="bs-s bs-net"><td class="l">{{ t.total >= 0 ? 'Total profit' : 'Total loss' }}</td><td></td><td></td><td class="n" [class.pos]="t.total >= 0" [class.neg]="t.total < 0">{{ m(t.total) }}</td></tr>
         </table></div>
-        <div class="hint">Unsold currency is valued at your average purchase rate{{ auth.isSuper() ? ' (change the rate to value it at today\\'s rate)' : '' }}. Capital is your own money, so it is not profit.</div>
+        <div class="hint">Currency you still hold is valued at what it cost you (average cost of the unsold currency){{ auth.isSuper() ? ' (change the rate to value it at today\\'s rate)' : '' }}. Capital is your own money, so it is not profit.</div>
       </div>
     }
   }

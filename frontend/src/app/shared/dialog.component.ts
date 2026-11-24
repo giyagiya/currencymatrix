@@ -1,4 +1,4 @@
-import { Component, inject, HostListener } from '@angular/core';
+import { Component, inject, HostListener, effect } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { UiService } from './ui.service';
 
@@ -10,7 +10,7 @@ import { UiService } from './ui.service';
   template: `
   @if (ui.dialog(); as d) {
     <div class="modal-bg" (click)="$event.target === $event.currentTarget && ui.close(d.kind === 'confirm' ? false : null)">
-      <div class="modal">
+      <div class="modal dlg">
         <h2>{{ d.title }}</h2>
         @if (d.kind === 'confirm') {
           <ol class="csum">@for (l of d.lines; track $index) { <li [innerHTML]="l"></li> }</ol>
@@ -39,6 +39,10 @@ import { UiService } from './ui.service';
 export class DialogComponent {
   ui = inject(UiService);
   pinVal = '';
+  /** A "Please check" popup takes the cursor on its Yes button: Enter = yes, Esc = go back (keyboard-only entry). */
+  constructor() {
+    effect(() => { const d = this.ui.dialog(); if (d && d.kind === 'confirm') setTimeout(() => document.querySelector<HTMLElement>('.dlg .acts button.pr')?.focus(), 0); });
+  }
   @HostListener('document:keydown.escape')
   esc() {
     const d = this.ui.dialog();

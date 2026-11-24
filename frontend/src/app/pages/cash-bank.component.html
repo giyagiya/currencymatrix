@@ -1,46 +1,93 @@
 <div class="card newentry">
-  <div class="fhd"><h2 class="sech">➕ New entry <small>Voucher {{ vno }} · {{ cur }}</small></h2>
+  <div class="fhd"><h2 class="sech">@if (loadedVno && loadedVno === vno.trim()) { 📂 Voucher {{ vno }} <small>opened · {{ cur }} · {{ dmy(date) }} – add lines or change them with ✏️</small> }
+    @else { ➕ New entry <small>Voucher {{ vno }} · {{ cur }}</small> }</h2>
     @if (auth.seeMoney()) { <button class="capbtn" (click)="openCap()">🏦 ＋ Add capital</button> }</div>
   <div class="bh">
     <div class="bh-f"><label>Date</label><input type="date" [(ngModel)]="date"></div>
-    <div class="bh-f"><label>Voucher No.</label><input [(ngModel)]="vno" inputmode="numeric"></div>
+    <div class="bh-f"><label>Voucher No.</label><input [(ngModel)]="vno" inputmode="numeric" (change)="vnoChanged()" (keydown.enter)="vnoChanged()"
+      title="Type an earlier voucher number to open it"></div>
     <div class="bh-f grow"><label>Currency (whole voucher)</label>
       <div class="seg curbar">@for (c of E().allCurs(); track c) {
         <button [class.on]="cur === c" (click)="switchCur(c)">{{ c }}@if (draftCount(c)) { <span class="dft" title="Draft rows – click to continue">{{ draftCount(c) }}</span> }</button> }</div></div>
   </div>
 
   <div class="gridwrap vgw"><table class="g vg">
-    <thead><tr><th>S.No.</th><th class="desc">Description</th><th>Mode</th><th>Bank A/c</th><th class="n">IN – we get</th><th class="n">OUT – we give</th><th class="n">EXPENSE</th><th>Remarks</th><th></th></tr></thead>
+    <thead><tr><th>S.No.</th><th class="desc">Description</th><th>Mode</th><th>Bank A/c</th><th class="n">Cash In</th><th class="n">Cash Out</th><th class="n">EXPENSE</th><th>Remarks</th><th></th></tr></thead>
     <tbody>
       @for (x of rows; track x; let i = $index) {
-        <tr>
-          <td class="idx">{{ i + 1 }}</td>
-          <td class="desc"><input [(ngModel)]="x.desc" (ngModelChange)="trail()" list="dl-acc2" class="up" autocomplete="off" (keydown.enter)="nextBox($event)"></td>
-          <td><select [(ngModel)]="x.mode" (keydown.enter)="nextBox($event)"><option value="cash">Cash</option><option value="bank">Bank</option></select></td>
-          <td><select [(ngModel)]="x.bank" [disabled]="x.mode !== 'bank'"><option value="BANK">BANK</option>@for (b of S().banks; track b.name) { <option [value]="b.name">{{ b.name }}</option> }</select></td>
-          <td class="n"><input class="vin" [(ngModel)]="x.inn" (ngModelChange)="amtChanged(x, 'inn')" inputmode="decimal" (keydown.enter)="nextBox($event)"></td>
-          <td class="n"><input class="vout" [(ngModel)]="x.out" (ngModelChange)="amtChanged(x, 'out')" inputmode="decimal" (keydown.enter)="nextBox($event)"></td>
-          <td class="n"><input class="vexp" [(ngModel)]="x.exp" (ngModelChange)="amtChanged(x, 'exp')" inputmode="decimal" (keydown.enter)="nextBox($event)"></td>
-          <td><input [(ngModel)]="x.note" (keydown.enter)="nextBox($event)"></td>
-          <td><button class="x" (click)="removeRow(i)" title="Remove row">✕</button></td>
+        <tr (focusin)="act = x" [class.actrow]="act === x && !!accInfo() && !x.saved" [class.savedrow]="locked(x)" [class.editrow]="x.editing"
+            [title]="locked(x) ? 'Saved – change it with ✏️' : x.editing ? 'Changing a saved line – Enter on Remarks to update, ↩ to undo' : ''">
+          <td class="idx">{{ x.editing ? '✏️' : x.saved ? '✓' : i + 1 }}</td>
+          <td class="desc"><input [(ngModel)]="x.desc" (ngModelChange)="trail()" list="dl-acc2" class="up" autocomplete="off" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"></td>
+          <td><select [(ngModel)]="x.mode" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"><option value="cash">Cash</option><option value="hand">Hand cash</option><option value="bank">Bank</option></select></td>
+          <td><select [(ngModel)]="x.bank" [disabled]="x.mode !== 'bank' || locked(x)"><option value="BANK">BANK</option>@for (b of S().banks; track b.name) { <option [value]="b.name">{{ b.name }}</option> }
+            @if (x.bank && x.bank !== 'BANK' && !hasBank(x.bank)) { <option [value]="x.bank">{{ x.bank }}</option> }</select></td>
+          <td class="n"><input class="vin" [(ngModel)]="x.inn" (ngModelChange)="amtChanged(x, 'inn')" inputmode="decimal" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"></td>
+          <td class="n"><input class="vout" [(ngModel)]="x.out" (ngModelChange)="amtChanged(x, 'out')" inputmode="decimal" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"></td>
+          <td class="n"><input class="vexp" [(ngModel)]="x.exp" (ngModelChange)="amtChanged(x, 'exp')" inputmode="decimal" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"></td>
+          <td><input [(ngModel)]="x.note" (keydown.enter)="rowDone($event, x)" [disabled]="locked(x)" [placeholder]="x.editing ? 'Enter = update line' : x.saved || !filled(x) ? '' : 'Enter = save line'"></td>
+          <td class="nowrap">@if (x.editing) {
+              <button class="x" (click)="cancelEdit(x)" title="Undo changes">↩</button>
+            } @else if (x.saved) {
+              @if (savedJv(x); as sj) { @if (canEdit(sj)) { <button class="x" (click)="editRow(x)" title="Change this line">✏️</button> } }
+              <button class="x" (click)="delSaved(x)" title="Delete this saved line">🗑</button>
+            } @else { <button class="x" (click)="removeRow(i)" title="Remove row">✕</button> }</td>
         </tr>
       }
     </tbody>
   </table></div>
 
+  @if (accInfo(); as ai) {
+    <div class="accinfo">
+      <div class="ai-h">
+        <span class="ai-n">{{ ai.n }}</span><span class="tag">{{ ai.type }}</span>
+        @if (ai.phone) { <span class="sub">📞 {{ ai.phone }}</span> }
+        <span class="flex"></span>
+        @if (ai.last) { <button class="sm" (click)="openLedger(ai.n)">📒 Open ledger</button> }
+      </div>
+      @if (ai.bals) {
+        <div class="ai-row"><span class="ai-l">Balance</span>
+          @for (b of ai.bals; track b.c) {
+            <span class="ai-b" [class.on]="b.c === ai.cur"><small>{{ b.c }}</small><b [class.pos]="b.v > 0" [class.neg]="b.v < 0">{{ drcr(b.v) }}</b></span>
+          } @empty { <span class="ai-b"><b>0.00</b><small>settled</small></span> }
+          @if (afterEntry(ai); as af) {
+            <span class="ai-b after"><small>After this entry · {{ ai.cur }}</small><b [class.pos]="af.v > 0" [class.neg]="af.v < 0">{{ drcr(af.v) }}</b></span>
+          }
+          @if (ai.owes) { <span class="sub">Dr = they owe us · Cr = we owe them</span> }
+        </div>
+      }
+      @if (ai.pend?.length) {
+        <div class="ai-row"><span class="ai-l">Unpaid bills</span>
+          @for (p of ai.pend; track p.no + p.c) { <span class="chip pend">Bill {{ p.no }} · {{ sym(p.c) }}{{ m(p.due) }} pending</span> }
+          <span class="sub">settle from Bills &amp; payments → Pay</span>
+        </div>
+      }
+      @if (ai.last?.length) {
+        <div class="ai-l">Last entries · {{ ai.cur }}</div>
+        <div class="gridwrap"><table class="ai-t">
+          @for (l of ai.last; track $index) {
+            <tr><td class="nowrap">{{ dmy(l.date) }}</td><td class="nowrap">{{ l.ref }}</td><td class="ai-tx" [title]="l.txt">{{ l.txt }}</td>
+              <td class="n vin">{{ l.dr ? m(l.dr) + ' Dr' : '' }}</td><td class="n vout">{{ l.cr ? m(l.cr) + ' Cr' : '' }}</td><td class="n sub nowrap">{{ drcr(l.run) }}</td></tr>
+          }
+        </table></div>
+      } @else if (ai.last) { <div class="sub">No {{ ai.cur }} entries yet for {{ ai.n }}.</div> }
+    </div>
+  }
+
   @if (tot(); as t) {
     <div class="vtm">
-      <div><span>IN</span><b class="pos">{{ m(t.i) }}</b></div>
-      <div><span>OUT</span><b class="neg">{{ m(t.o) }}</b></div>
+      <div><span>Cash In</span><b class="pos">{{ m(t.i) }}</b></div>
+      <div><span>Cash Out</span><b class="neg">{{ m(t.o) }}</b></div>
       <div><span>EXPENSE</span><b class="exp">{{ m(t.e) }}</b></div>
       <div><span>Net</span><b>{{ m(t.net) }}</b></div>
       @if (auth.seeMoney()) {
         <div><span>Cash in hand after</span><b [class.neg]="t.c1 < 0">{{ m(t.c1) }}</b>@if (t.cd) { <small>now {{ m(t.c0) }} · {{ t.cd > 0 ? '+' : '−' }} {{ m(t.cd < 0 ? -t.cd : t.cd) }}</small> }</div>
-        <div [class.pgain]="t.p1 >= 0" [class.ploss]="t.p1 < 0"><span>{{ t.p1 >= 0 ? 'Profit' : 'Loss' }} ({{ S().base }})</span><b>{{ m(t.p1 < 0 ? -t.p1 : t.p1) }}</b>@if (t.e) { <small>now {{ m(t.tp) }} · − {{ m(t.ex) }} expense</small> }</div>
+        <div [class.pgain]="t.p1 >= 0" [class.ploss]="t.p1 < 0"><span>{{ t.p1 >= 0 ? 'Profit' : 'Loss' }} ({{ S().base }})</span><b>{{ m(t.p1 < 0 ? -t.p1 : t.p1) }}</b>@if (t.ex) { <small>now {{ m(t.tp) }} · − {{ m(t.ex) }} expense</small> }</div>
       }
     </div>
   }
-  <div class="hint">IN = we get · OUT = we give · EXPENSE = we spend. Enter moves to the next box, Esc goes back.</div>
+  <div class="hint">Cash In = we get · Cash Out = we give · EXPENSE = we spend. Enter moves to the next box · <b>Enter on Remarks</b> asks to save that line
+    (Enter = yes, Esc = go back and edit) · <b>✏️</b> changes a saved line right here · <b>Save voucher</b> saves any lines not saved or changed yet.</div>
   <div class="acts">
     <button class="pr" (click)="saveVoucher()" [disabled]="store.busy()">💾 Save voucher</button>
     <button (click)="newVoucher()">New voucher</button>
@@ -61,7 +108,7 @@
     </div></div></div>
   @if (shown().length) {
   <div class="xlwrap" id="xlwrap"><table class="xl">
-    <thead><tr><th class="rn"></th><th>Date</th><th>Type / No.</th><th>Description</th><th>Mode</th><th>Cur.</th><th class="n">IN</th><th class="n">OUT</th><th class="n">EXPENSE</th><th class="n">Bill amount</th><th class="n">Cash balance</th><th class="wide">Remarks</th><th></th></tr></thead>
+    <thead><tr><th class="rn"></th><th>Date</th><th>Type / No.</th><th>Description</th><th>Mode</th><th>Cur.</th><th class="n">Cash In</th><th class="n">Cash Out</th><th class="n">EXPENSE</th><th class="n">Bill amount</th><th class="n">Cash balance</th><th class="wide">Remarks</th><th></th></tr></thead>
     <tbody>
       @for (it of shown(); track $index; let k = $index; let last = $last) {
         <tr [class.xnew]="last">
@@ -74,7 +121,7 @@
               <td>{{ r.mode }}{{ r.bank ? ' · ' + r.bank : '' }}</td><td>{{ it.j!.cur }}</td>
               <td class="n vin">{{ r.dir === 'in' ? m(it.j!.amt) : '' }}</td><td class="n vout">{{ r.dir === 'out' ? m(it.j!.amt) : '' }}</td><td class="n vexp">{{ r.dir === 'exp' ? m(it.j!.amt) : '' }}</td>
               <td></td><td class="n cbal" [class.neg]="(it.cb || 0) < 0" [class.sub]="!it.cd">{{ m(it.cb || 0) }}</td><td class="rem wide"><div class="clip" [title]="r.rem">{{ r.rem }}</div></td>
-              <td class="c nowrap">@if (canEdit(it.j!)) { <button class="x" (click)="openEdit(it.j!)" title="Edit">✏️</button> }<button class="x" (click)="delJv(it.j!)" title="Delete">🗑</button></td>
+              <td class="c nowrap">@if (canEdit(it.j!)) { <button class="x" (click)="editFromList(it.j!)" title="Change this line in the entry grid above">✏️</button> }<button class="x" (click)="delJv(it.j!)" title="Delete">🗑</button></td>
             }
           } @else {
             <td>{{ dmy(it.b!.date) }}</td>
@@ -83,14 +130,17 @@
             <td>{{ PMODES[it.r!.mode] }}{{ it.r!.bank ? ' · ' + it.r!.bank : '' }}</td><td>{{ it.r!.base }}</td>
             <td></td><td></td><td></td><td class="n"><b>{{ m(E().rowAmt(it.r!)) }}</b></td><td></td>
             <td class="rem wide"><div class="clip">{{ it.r!.cur }} {{ m(it.r!.qty) }} {{ E().rateShort(it.r!.cur, E().rowRate(it.r!)) }}</div></td>
-            <td class="c">@if (E().payOf(it.b!.id, it.i!)) { <span class="rt rdone">✓ {{ E().rowSide(it.r!) === 'p' ? 'Paid' : 'Received' }}</span> } @else { <span class="rt rpend">Pending</span> }</td>
+            <td class="c">@switch (E().lineState(it.b!, it.i!).st) {
+              @case ('paid') { <span class="rt rdone">✓ {{ E().rowSide(it.r!) === 'p' ? 'Paid' : 'Received' }}</span> }
+              @case ('part') { <span class="rt rpart" [title]="'₹' + m(E().lineState(it.b!, it.i!).due) + ' pending'">Part {{ E().rowSide(it.r!) === 'p' ? 'paid' : 'received' }}</span> }
+              @default { <span class="rt rpend">Pending</span> } }</td>
           }
         </tr>
       }
     </tbody>
     <tfoot>
       @for (f of footer().tot; track f.c) {
-        <tr><td class="rn"></td><td colspan="4" class="r">Cash / bank total · <b>Net {{ m(f.i - f.o - f.e) }}</b></td><td><b>{{ f.c }}</b></td><td class="n vin">{{ m(f.i) }}</td><td class="n vout">{{ m(f.o) }}</td><td class="n vexp">{{ m(f.e) }}</td><td></td><td class="n"><b>{{ m(f.run) }}</b></td><td class="wide"></td><td></td></tr>
+        <tr><td class="rn"></td><td colspan="4" class="r">Cash {{ f.c }} total · <b>Net {{ m(f.i - f.o - f.e) }}</b></td><td><b>{{ f.c }}</b></td><td class="n vin">{{ m(f.i) }}</td><td class="n vout">{{ m(f.o) }}</td><td class="n vexp">{{ m(f.e) }}</td><td></td><td class="n"><b>{{ m(f.run) }}</b></td><td class="wide"></td><td></td></tr>
       }
       @if (footer().bt.p || footer().bt.s) {
         <tr><td class="rn"></td><td colspan="4" class="r">Bills total</td><td><b>{{ S().base }}</b></td><td colspan="4" class="sub">Purchase {{ m(footer().bt.p) }} · Sale {{ m(footer().bt.s) }}</td><td></td><td class="wide"></td><td></td></tr>
@@ -100,33 +150,6 @@
   } @else { <div class="empty">{{ CF ? 'No ' + CF + ' entries.' : 'No entries yet.' }}</div> }
 </div>
 
-@if (ed) {
-  <div class="modal-bg" (click)="$event.target === $event.currentTarget && (ed = null)"><div class="modal">
-    <h2>✏️ Edit voucher {{ ed.vno }}</h2>
-    <div class="seg edir">
-      <button class="sbtn" [class.on]="ed.dir === 'in'" (click)="ed.dir = 'in'">IN – we get</button>
-      <button class="pbtn" [class.on]="ed.dir === 'out'" (click)="ed.dir = 'out'">OUT – we give</button>
-      <button class="xbtn" [class.on]="ed.dir === 'exp'" (click)="ed.dir = 'exp'">EXPENSE</button>
-    </div>
-    <div class="grid2">
-      <div><label>Date</label><input type="date" [(ngModel)]="ed.date"></div>
-      <div><label>Voucher No.</label><input [(ngModel)]="ed.vno" inputmode="numeric"></div>
-      <div><label>Description</label><input [(ngModel)]="ed.desc" list="dl-acc2" class="up" autocomplete="off" [placeholder]="ed.dir === 'exp' ? 'EXPENSES' : ''"></div>
-      <div><label>Amount</label>
-        <div class="row"><select class="w110" [(ngModel)]="ed.cur">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select>
-          <input id="ed-amt" [(ngModel)]="ed.amt" inputmode="decimal" placeholder="0.00" (keydown.enter)="saveEdit()"></div></div>
-      @if (ed.other) {
-        <div><label>From / To</label><input [value]="ed.other" disabled></div>
-      } @else {
-        <div><label>Mode</label><select [(ngModel)]="ed.mode"><option value="cash">💵 Cash</option><option value="bank">🏦 Bank</option></select></div>
-        @if (ed.mode === 'bank') { <div><label>Bank A/c</label><select [(ngModel)]="ed.bank">@for (b of edBanks(); track b) { <option [value]="b">{{ b }}</option> }</select></div> }
-      }
-      <div [class.span2]="!ed.other && ed.mode === 'bank'"><label>Remarks</label><input [(ngModel)]="ed.note" placeholder="optional"></div>
-    </div>
-    <div class="acts"><button class="pr" (click)="saveEdit()" [disabled]="store.busy()">💾 Save changes</button><button (click)="ed = null">Cancel</button></div>
-  </div></div>
-}
-
 @if (cap) {
   <div class="modal-bg" (click)="$event.target === $event.currentTarget && (cap = null)"><div class="modal">
     <h2>🏦 Capital (owner's money)</h2>
@@ -135,7 +158,7 @@
       <div><label>Date</label><input type="date" [(ngModel)]="cap.date"></div>
       <div><label>Currency</label><select [(ngModel)]="cap.cur">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></div>
       <div><label>Amount</label><input id="cap-amt" [(ngModel)]="cap.amt" inputmode="decimal" placeholder="0.00" (keydown.enter)="saveCap()"></div>
-      <div><label>{{ cap.dir === 'in' ? 'Put into' : 'Taken from' }}</label><select [(ngModel)]="cap.mode"><option value="cash">💵 Cash</option><option value="bank">🏦 Bank</option></select></div>
+      <div><label>{{ cap.dir === 'in' ? 'Put into' : 'Taken from' }}</label><select [(ngModel)]="cap.mode"><option value="cash">💵 Cash</option><option value="hand">👛 Hand cash</option><option value="bank">🏦 Bank</option></select></div>
       @if (cap.mode === 'bank') { <div><label>Bank</label><select [(ngModel)]="cap.bank"><option value="BANK">BANK</option>@for (b of S().banks; track b.name) { <option [value]="b.name">{{ b.name }}</option> }</select></div> }
       <div><label>Remarks</label><input [(ngModel)]="cap.note" placeholder="optional"></div>
     </div>
