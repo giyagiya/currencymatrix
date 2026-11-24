@@ -75,6 +75,7 @@ r.post('/bills', needPage('bill'), async (req, res) => {
 });
 
 r.delete('/bills/:id', needPage(['bill', 'pay']), async (req, res) => {
+  if (req.user.role === 'user') throw new HttpError(403, 'Only Super admin or Master can delete a bill');
   await checkDeletePin(req);
   await tx(async db => {
     const b = (await db.query('SELECT * FROM bills WHERE id=$1', [req.params.id])).rows[0];

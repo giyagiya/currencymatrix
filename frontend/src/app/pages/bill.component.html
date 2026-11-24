@@ -25,8 +25,8 @@
           <td><select [(ngModel)]="x.cur">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></td>
           <td class="n"><input [(ngModel)]="x.qty" (ngModelChange)="trail()" inputmode="decimal" placeholder="0"></td>
           <td class="n">
-            @if (invCur(x.cur)) { <input [(ngModel)]="x.inv" (ngModelChange)="invChanged(x); trail()" inputmode="decimal" [placeholder]="'1 ' + x.base + ' = ? ' + x.cur" data-enter="row"> }
-            @else { <input [(ngModel)]="x.rate" (ngModelChange)="trail()" inputmode="decimal" [placeholder]="lastRate(x) ? 'Last: ' + lastRate(x) : '1 ' + x.cur + ' = ? ' + x.base" data-enter="row"> }</td>
+            @if (invCur(x.cur)) { <input [(ngModel)]="x.inv" (ngModelChange)="invChanged(x); trail()" inputmode="decimal" [placeholder]="'1 ' + x.base + ' = ? ' + x.cur"> }
+            @else { <input [(ngModel)]="x.rate" (ngModelChange)="trail()" inputmode="decimal" [placeholder]="lastRate(x) ? 'Last: ' + lastRate(x) : '1 ' + x.cur + ' = ? ' + x.base"> }</td>
           <td class="n amtc">{{ lineAmt(x) ? m(lineAmt(x)) : '' }}</td>
           <td><select [(ngModel)]="x.mode">@for (md of modes; track md) { <option [value]="md">{{ PMODES[md] }}</option> }</select></td>
           <td>@if (x.mode === 'bank') { <input [(ngModel)]="x.bank" list="dl-bank" class="up" autocomplete="off" placeholder="BANK" [class.newname]="isNewBank(x.bank)" [title]="isNewBank(x.bank) ? 'New bank – added when you save' : ''"> }
@@ -44,8 +44,8 @@
     </tbody>
   </table></div>
 
-  <div class="hint">Type one line per row – a new row appears by itself. <b>Enter</b> goes to the next box · <b>Enter</b> on Rate jumps to the next line
-    (Pay by, Bank, Commission… keep the row above's choice – change them with Tab or a click). A new bank, dealer or stock name is added when you save.</div>
+  <div class="hint">Type one line per row – a new row appears by itself. <b>Enter</b> goes box by box across the whole line, then to the next line
+    (Pay by, Bank, Commission… start with the row above's choice). A new bank, dealer or stock name is added when you save.</div>
 
   @if (totals(); as t) {
     <div class="tots">
@@ -82,7 +82,7 @@
         @if (!limited()) { @if (billSums(b); as s) { <span class="sub">Diff {{ m(s.diff) }}{{ s.comm ? ' · Comm ' + m(s.comm) : '' }} · <b>Net {{ m(s.net) }}</b></span> } }
         <span class="flex"></span>
         @if (auth.canPage('bill')) { <button class="sm" (click)="openBill(b)">✏️ Edit</button> }
-        <button class="sm danger" (click)="delBill(b)">🗑</button>
+        @if (!limited()) { <button class="sm danger" (click)="delBill(b)">🗑</button> }   <!-- User logins: no delete -->
       </div>
       @for (r of b.rows; track $index; let i = $index) {
         @if (lineVisible(r)) {
@@ -95,12 +95,12 @@
             @if (E().lineState(b, i); as ls) {
               @if (ls.st === 'paid') {
                 <span class="chip done">✓ {{ E().rowSide(r) === 'p' ? 'Paid' : 'Received' }} {{ dmy(ls.last!.date) }}</span>
-                <button class="sm" (click)="unpay(b, i)" title="Back to pending">↩</button>
+                @if (!limited()) { <button class="sm" (click)="unpay(b, i)" title="Back to pending">↩</button> }
                 <button class="sm wa" (click)="openSend(b, i)" title="Send this bill on WhatsApp">📤 Send bill</button>
               } @else {
                 @if (ls.st === 'part') {
                   <span class="chip part" [title]="E().paysOf(b.id, i).length + ' payment(s) so far'">Part {{ E().rowSide(r) === 'p' ? 'paid' : 'received' }} ₹{{ m(ls.paid) }} · ₹{{ m(ls.due) }} pending</span>
-                  <button class="sm" (click)="unpay(b, i)" title="Back to pending">↩</button>
+                  @if (!limited()) { <button class="sm" (click)="unpay(b, i)" title="Back to pending">↩</button> }
                 }
                 <button class="sm" [class.paybtn]="E().rowSide(r) === 'p'" [class.recvbtn]="E().rowSide(r) === 's'" (click)="openPay(b, i)">{{ E().rowSide(r) === 'p' ? '💸 Pay' : '💰 Receive' }}</button>
               }

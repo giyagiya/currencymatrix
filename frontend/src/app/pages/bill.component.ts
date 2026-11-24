@@ -69,15 +69,14 @@ export class BillComponent implements AfterViewInit {
   isNewBank(n: string) { n = U(n); return !!n && n !== 'BANK' && !this.S().banks.some(b => b.name === n); }
   isNewDealer(n: string) { n = U(n); return !!n && !this.S().dealers.some(d => d.name === n); }
 
-  /** Enter in the grid: next box (across, then the next row). Enter on Rate jumps to the next row's Party. */
+  /** Enter in the grid: next box across the whole line (Rate → Pay by → Bank / Dealer → Comm. → Stock → Price in → WhatsApp);
+   *  only after the line's last box does it go to the next line's Party. Boxes that are off (e.g. Bank for Shop cash) are skipped. */
   gridKey(e: Event) {
     const el = e.target as HTMLElement;
     if (el.tagName === 'BUTTON' || (e as KeyboardEvent).isComposing) return;   // Enter on a button still clicks it
     e.preventDefault();
     this.trail();
-    const toRow = el.dataset['enter'] === 'row', tr = el.closest('tr');
     setTimeout(() => {   // let a name picked from the party list fill in, and a new row appear
-      if (toRow) { (tr?.nextElementSibling?.querySelector('td.desc input') as HTMLElement | null)?.focus(); return; }
       const boxes = Array.from(document.querySelectorAll<HTMLElement>('table.bg input:not([disabled]), table.bg select'));
       boxes[boxes.indexOf(el) + 1]?.focus();
     }, 30);
@@ -101,6 +100,30 @@ export class BillComponent implements AfterViewInit {
       : `We <b>SELL</b> ${q} to <b>${l.desc}</b> ${r} → <b>${ac}</b> must <b>PAY us</b> ${amt} ${this.payTxt(l)}${c}${st}`;
   }
 
+  /** Warning when this bill sells more of a currency than you hold (what you hold + what the bill buys − what it sells < 0).
+   *  "Hold" = the currency's total on the Balance sheet (all names except capital and expenses). When a bill is being edited,
+   *  its saved version is taken out first. A line priced in another currency (e.g. INR priced in USDT) gives / gets that currency too.
+   *  Only warns when the bill makes the position worse – a bill that buys back a short does not warn. */
+  shortNotes(LL: Line[]): string[] {
+    const E = this.E(), S = this.S(), base = S.base, B = E.balances();
+    const held = (c: string) => Object.keys(B[c] || {}).reduce((s, a) => { const t = E.accType(a); return t === 'capital' || t === 'expense' ? s : s + B[c][a]; }, 0);
+    // effect of one line on a currency: + we get it, − we give it
+    const eff = (c: string, cur: string, lb: string, buy: boolean, q: number, amt: number) =>
+      (cur === c ? (buy ? q : -q) : 0) + (lb === c && c !== base ? (buy ? -amt : amt) : 0);
+    const old = this.editId ? S.bills.find(b => b.id === this.editId) : undefined;
+    const curs = [...new Set(LL.flatMap(l => [l.cur, l.base]).filter(c => c && c !== base))];
+    return curs.flatMap(c => {
+      const was = old ? old.rows.reduce((s, r) => s + eff(c, r.cur, r.base || base, E.rowSide(r) === 'p', num(r.qty), E.rowAmt(r)), 0) : 0;
+      const before = r2(held(c) - was);
+      let buy = 0, sell = 0; const sellLines: number[] = [];
+      LL.forEach(l => { const e = eff(c, l.cur, l.base, l.side === 'p', num(l.qty), this.lineAmt(l)); if (e > 0) buy += e; else if (e < 0) { sell -= e; sellLines.push(this.rows.indexOf(l) + 1); } });
+      const after = r2(before + buy - sell);
+      if (after > -0.005 || after >= before) return [];
+      return [`⚠️ <b>${c}</b>: this bill sells <b>${m(sell)}</b> but buys ${m(buy)} and you hold ${m(before)} → <b>${m(-after)} ${c} more than you have</b>`
+        + ` (selling line${sellLines.length > 1 ? 's' : ''} ${sellLines.join(', ')}). Check the currency on these lines.`];
+    });
+  }
+
   async saveBill() {
     const LL = this.rows.filter(l => this.filled(l));
     if (!LL.length) { this.ui.toast('Type at least one line'); return; }
@@ -116,6 +139,7 @@ export class BillComponent implements AfterViewInit {
       const lr = this.lastRate(l), rr = num(l.rate);
       if (lr && (rr > lr * 1.3 || rr < lr * 0.7)) notes.push(`⚠️ Line ${q + 1}: rate <b>${rr}</b> is far from your usual ${l.cur} rate ${lr}`);
     });
+    notes.push(...this.shortNotes(LL));
     const nb = [...new Set(LL.filter(l => l.mode === 'bank' && this.isNewBank(l.bank)).map(l => U(l.bank)))];
     const nd = [...new Set(LL.filter(l => l.mode === 'home' && this.isNewDealer(l.dealer)).map(l => U(l.dealer)))];
     nb.forEach(b => notes.push(`➕ New bank <b>${b}</b> will be added (A/c no. and IFSC can be added in Setup → Banks)`));

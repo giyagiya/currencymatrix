@@ -86,6 +86,7 @@ r.delete('/jv/:id', needPage(['jv', 'pay']), async (req, res) => {
 
 // Undo a bill line's payments (back to pending) – removes every payment of the line and their commission
 r.delete('/payments/:bill/:line', needPage(['pay', 'bill']), async (req, res) => {
+  if (req.user.role === 'user') throw new HttpError(403, 'Only Super admin or Master can undo a payment');
   await checkDeletePin(req);
   await tx(async db => {
     const del = await db.query('DELETE FROM jv WHERE link_bill=$1 AND link_line=$2 RETURNING *', [req.params.bill, Number(req.params.line)]);
