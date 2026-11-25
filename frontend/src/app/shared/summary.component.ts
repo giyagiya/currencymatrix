@@ -22,7 +22,7 @@ export class SummaryComponent {
   v = computed(() => {
     const E = this.store.engine(); if (!E) return null;
     const A = E.balances()[E.S.base] || {}; let cap = 0, cash = 0, bank = 0;
-    Object.keys(A).forEach(a => { const t = E.accType(a); if (t === 'capital') cap -= A[a]; else if (t === 'cash') cash += A[a]; else if (t === 'bank') bank += A[a]; });
+    Object.keys(A).forEach(a => { const t = E.accType(a); if (t === 'capital') cap -= A[a]; else if (t === 'cash' || t === 'stock') cash += A[a]; else if (t === 'bank') bank += A[a]; });
     return { cap, cash, bank, tp: E.totalProfit().total };
   });
 }

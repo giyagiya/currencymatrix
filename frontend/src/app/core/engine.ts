@@ -21,19 +21,28 @@ export interface JvView { desc: string; dir: 'in' | 'out' | 'exp'; mode: string;
 export class Engine {
   constructor(public S: Book) {}
 
-  accType(n: string): AccType { return this.S.accounts[n]?.type || (this.isOwnStock(n) ? 'stock' : 'party'); }
-  /** Our own stock of a currency, e.g. "SGD STOCK": holds the currency of bill lines that have no Stock. */
-  ownStock(cur: string) { return cur + ' STOCK'; }
-  isOwnStock(n: string) { return / STOCK$/.test(n) && this.allCurs().some(c => n === this.ownStock(c)); }
+  accType(n: string): AccType { return this.S.accounts[n]?.type || 'party'; }
   invCur(c: string) { return c === this.S.base; }
   rowSide(r: BillRow): 'p' | 's' { return num(r.prate) > 0 ? 'p' : 's'; }
   rowRate(r: BillRow) { return num(r.prate) || num(r.srate); }
   rowAmt(r: BillRow) { return r2(num(r.qty) * this.rowRate(r)); }
   rowComm(r: BillRow) { return r2(this.rowAmt(r) * num(r.comm) / 100000); }
-  /** Account the rupee amount of a bill line is booked to: the stock company when Stock is filled, otherwise the party. Its payment / receipt settles this account too. */
-  rowAcct(r: BillRow) { return r.stock || r.desc; }
-  /** Account the currency of a bill line is booked to: the stock company when Stock is filled, otherwise our own stock ("SGD STOCK"). */
-  rowStock(r: BillRow) { return r.stock || this.ownStock(r.cur); }
+  /** "Currency in whose hand": a bill line books two things.
+   *  Rupees (the amount) – always the party (we owe them / they owe us); its Pay / Receive settles the party. */
+  rowAcct(r: BillRow) { return r.desc; }
+  /** The currency – in the hand of the Stock place (e.g. MY SGD COMPANY) when Stock is filled, otherwise the party's own hand. */
+  rowStock(r: BillRow) { return r.stock || r.desc; }
+  /** The currencies a stock company keeps (e.g. MY SGD COMPANY → SGD): from Setup → Stock for each currency, or else from
+   *  the currencies of its bill lines. Empty = not tied to a currency (parties such as KUMAR can hold any currency). */
+  stockCurs(name: string): string[] {
+    const n = U(name); if (!n) return [];
+    const so = this.S.stockOf || {}, set = Object.keys(so).filter(c => U(so[c]) === n);
+    if (set.length) return set;
+    if (this.accType(n) !== 'stock') return [];
+    const curs = new Set<string>();
+    this.S.bills.forEach(b => b.rows.forEach(r => { if (U(r.stock) === n) curs.add(r.cur); }));
+    return [...curs];
+  }
   rateShort(cur: string, rate: number) { rate = num(rate); return this.invCur(cur) ? '÷ ' + (+(1 / rate).toFixed(6)) : '@ ' + rate; }
   allCurs() { return [this.S.base].concat(this.S.currencies.filter(c => c !== this.S.base)); }
   allAccounts() { return Object.keys(this.S.accounts).sort(); }
@@ -44,13 +53,13 @@ export class Engine {
     const P: Posting[] = [], S = this.S;
     S.bills.forEach(b => b.rows.forEach(r => {
       const q = num(r.qty); if (!r.desc || !q) return;
-      const base = r.base || S.base, ref = 'Bill ' + b.no, acct = this.rowAcct(r), stk = this.rowStock(r), who = r.stock ? ' · ' + r.desc : '';
+      const base = r.base || S.base, ref = 'Bill ' + b.no, acct = this.rowAcct(r), stk = this.rowStock(r), away = stk !== r.desc;
       if (num(r.prate) > 0) {
-        P.push({ date: b.date, ref, acct, cur: base, dr: 0, cr: r2(q * num(r.prate)), txt: 'Purchase ' + r.cur + ' ' + m(q) + ' @ ' + num(r.prate) + who });
+        P.push({ date: b.date, ref, acct, cur: base, dr: 0, cr: r2(q * num(r.prate)), txt: 'Purchase ' + r.cur + ' ' + m(q) + ' @ ' + num(r.prate) + (away ? ' · kept at ' + stk : '') });
         P.push({ date: b.date, ref, acct: stk, cur: r.cur, dr: q, cr: 0, txt: 'Purchase from ' + r.desc + ' @ ' + num(r.prate) });
       }
       if (num(r.srate) > 0) {
-        P.push({ date: b.date, ref, acct, cur: base, dr: r2(q * num(r.srate)), cr: 0, txt: 'Sale ' + r.cur + ' ' + m(q) + ' @ ' + num(r.srate) + who });
+        P.push({ date: b.date, ref, acct, cur: base, dr: r2(q * num(r.srate)), cr: 0, txt: 'Sale ' + r.cur + ' ' + m(q) + ' @ ' + num(r.srate) + (away ? ' · from ' + stk : '') });
         P.push({ date: b.date, ref, acct: stk, cur: r.cur, dr: 0, cr: q, txt: 'Sale to ' + r.desc + ' @ ' + num(r.srate) });
       }
     }));
@@ -167,7 +176,9 @@ export class Engine {
   }
 
   partyBal(n: string) { return (this.balances()[this.S.base] || {})[n] || 0; }
-  cashNow(cur: string) { const B = this.balances()[cur] || {}; let t = 0; Object.keys(B).forEach(a => { if (this.accType(a) === 'cash') t += B[a]; }); return t; }
+  /** Cash in hand: cash accounts and stock / wallet companies (e.g. MY SGD COMPANY) – a wallet is cash in hand. */
+  isCashLike(n: string) { const t = this.accType(n); return t === 'cash' || t === 'stock'; }
+  cashNow(cur: string) { const B = this.balances()[cur] || {}; let t = 0; Object.keys(B).forEach(a => { if (this.isCashLike(a)) t += B[a]; }); return t; }
   lastRate(cur: string, base?: string) {
     let best: { d: string; r: number } | null = null;
     this.S.bills.forEach(b => b.rows.forEach(r => {
@@ -205,7 +216,7 @@ export class Engine {
       let dr = 0, cr = 0, os = 0, cash = 0, bank = 0, cos = 0, exp = 0, cap = 0;
       rows.forEach(r => {
         if (r.b > 0) dr += r.b; else cr -= r.b;
-        if (r.t === 'cash') cash += r.b; else if (r.t === 'bank') bank += r.b; else if (r.t === 'expense') exp += r.b;
+        if (r.t === 'cash' || r.t === 'stock') cash += r.b; else if (r.t === 'bank') bank += r.b; else if (r.t === 'expense') exp += r.b;
         else if (r.t === 'capital') cap -= r.b; else if (r.b > 0) os += r.b; else cos += r.b;
       });
       const total = os + cash + bank;
@@ -250,7 +261,7 @@ export class Engine {
       b.rows.forEach(r => {
         if ((r.base || S.base) !== S.base) return; if (Pf && this.rowAcct(r) !== Pf) return;
         const x = g(this.rowAcct(r)), a = r2(num(r.qty) * this.rowRate(r));
-        const who = r.stock ? ' · ' + r.desc : '';
+        const who = r.stock && r.stock !== r.desc ? (num(r.prate) > 0 ? ' · kept at ' : ' · from ') + r.stock : '';
         if (num(r.prate) > 0) { x.pur += a; x.pq.push(r.cur + ' ' + m(num(r.qty)) + ' ' + this.rateShort(r.cur, num(r.prate)) + who); }
         else { x.sale += a; x.sq.push(r.cur + ' ' + m(num(r.qty)) + ' ' + this.rateShort(r.cur, num(r.srate)) + who); }
       });

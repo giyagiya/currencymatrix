@@ -11,6 +11,8 @@ import { m, num, U, r2, today, dmy, last4 } from '../core/fmt';
 interface Line {
   desc: string; phone: string; side: 'p' | 's'; cur: string; base: string; qty: string; rate: string; inv: string;
   stock: string; mode: PayMode; bank: string; dealer: string; comm: string; orig?: number;
+  /** what is saved for this line (row = as stored, sig = the boxes at save time) – set by "Save line?" and when a bill is opened */
+  saved?: { row: BillRow; sig: string };
 }
 interface PayForm { date: string; amt: string; mode: PayMode; bank: string; dealer: string; comm: string; person: string; ref: string; nbName: string; nbAc: string; nbIfsc: string; ndName: string; }
 
@@ -49,15 +51,19 @@ export class BillComponent implements AfterViewInit {
     return { desc: '', phone: '', side: p?.side || 'p', cur: c, base: p?.base || S.base, qty: '', rate: '', inv: '', stock: '',
       mode: p?.mode || S.lastMode || 'bank', bank: p?.bank || 'BANK', dealer: p?.dealer || '', comm: '' };
   }
-  /** Stock companies for the Stock drop-down: every stock account, plus any name kept in Setup → Stock for each currency.
-   *  Our own "SGD STOCK" accounts are left out – an empty Stock already uses them. */
+  /** Stock drop-down: every stock account, any name kept in Setup → Stock for each currency, and any name that holds a
+   *  foreign currency right now (e.g. KUMAR keeping SGD) – so a sale can be made FROM it. */
   stockNames = computed(() => {
-    const S = this.S(), E = this.E(), n = new Set<string>();
+    const S = this.S(), E = this.E(), n = new Set<string>(), B = E.balances();
     Object.keys(S.accounts).forEach(a => { if (S.accounts[a].type === 'stock') n.add(a); });
     Object.values(S.stockOf || {}).forEach(v => { if (v) n.add(v); });
-    return [...n].filter(a => !E.isOwnStock(a)).sort();
+    Object.keys(B).filter(c => c !== S.base).forEach(c => Object.keys(B[c]).forEach(a => {
+      if (B[c][a] > 0.004 && ['party', 'dealer', 'stock'].includes(E.accType(a))) n.add(a);
+    }));
+    return [...n].sort();
   });
-  isNewStock(n: string) { n = U(n); return !!n && !this.E().isOwnStock(n) && !this.stockNames().includes(n); }
+  /** a Stock name never used before (an existing name such as KUMAR is not new) */
+  isNewStock(n: string) { n = U(n); return !!n && !this.S().accounts[n] && !this.stockNames().includes(n); }
   filled(l: Line) { return !!(U(l.desc) || num(l.qty) || num(l.rate)); }
   trail() { const last = this.rows[this.rows.length - 1]; if (this.filled(last)) this.rows.push(this.newLine(last)); }
   removeRow(i: number) { this.rows.splice(i, 1); if (!this.rows.length || this.filled(this.rows[this.rows.length - 1])) this.rows.push(this.newLine(this.rows[this.rows.length - 1])); }
@@ -70,16 +76,116 @@ export class BillComponent implements AfterViewInit {
   isNewDealer(n: string) { n = U(n); return !!n && !this.S().dealers.some(d => d.name === n); }
 
   /** Enter in the grid: next box across the whole line (Rate → Pay by → Bank / Dealer → Comm. → Stock → Price in → WhatsApp);
-   *  only after the line's last box does it go to the next line's Party. Boxes that are off (e.g. Bank for Shop cash) are skipped. */
+   *  Enter on the line's last box asks "Save line N?" (like the Cash Book), then goes to the next line's Party.
+   *  Boxes that are off (e.g. Bank for Shop cash) are skipped. */
   gridKey(e: Event) {
     const el = e.target as HTMLElement;
     if (el.tagName === 'BUTTON' || (e as KeyboardEvent).isComposing) return;   // Enter on a button still clicks it
     e.preventDefault();
+    const tr = el.closest('tr'), mine = tr ? Array.from(tr.querySelectorAll<HTMLElement>('input:not([disabled]), select')) : [];
+    const x = tr ? this.rows[Array.from(tr.parentElement!.children).indexOf(tr)] : undefined;
+    if (x && mine[mine.length - 1] === el && this.filled(x)) { setTimeout(() => this.rowDone(x), 30); return; }   // let a picked name fill in first
     this.trail();
     setTimeout(() => {   // let a name picked from the party list fill in, and a new row appear
       const boxes = Array.from(document.querySelectorAll<HTMLElement>('table.bg input:not([disabled]), table.bg select'));
       boxes[boxes.indexOf(el) + 1]?.focus();
     }, 30);
+  }
+
+  /* ---------- save line by line: Enter on a line's last box asks "Save line N?" ---------- */
+  /** the boxes of a line that are saved – used to tell a saved line from a changed one */
+  sig(l: Line) {
+    return JSON.stringify([U(l.desc), l.side, l.cur, l.base, num(l.qty), num(l.rate), U(l.stock), l.mode,
+      l.mode === 'bank' ? U(l.bank) || 'BANK' : '', l.mode === 'home' ? U(l.dealer) : '', num(l.comm), String(l.phone || '').trim()]);
+  }
+  /** saved and not changed since */
+  isSaved(l: Line) { return !!l.saved && this.sig(l) === l.saved.sig; }
+  /** saved, then changed on screen (not saved yet) */
+  isChanged(l: Line) { return !!l.saved && this.filled(l) && this.sig(l) !== l.saved.sig; }
+  toRow(l: Line): BillRow {
+    return { desc: U(l.desc), cur: l.cur, base: l.base, qty: num(l.qty), prate: l.side === 'p' ? num(l.rate) : 0, srate: l.side === 's' ? num(l.rate) : 0,
+      stock: U(l.stock), mode: l.mode, bank: l.mode === 'bank' ? U(l.bank) || 'BANK' : '', dealer: l.mode === 'home' ? U(l.dealer) : '', comm: num(l.comm) };
+  }
+  /** What is wrong with a line ('' = fine) – the same checks as Save bill. */
+  lineError(l: Line) {
+    if (!U(l.desc)) return 'enter party name';
+    if (!(num(l.qty) > 0)) return 'enter quantity';
+    if (!(num(l.rate) > 0)) return 'enter rate';
+    if (l.cur === l.base) return 'Currency and Price in are the same. Change one.';
+    const sc = this.E().stockCurs(l.stock);   // a stock company keeps only its own currency (e.g. MY SGD COMPANY → SGD)
+    if (sc.length && !sc.includes(l.cur)) return U(l.stock) + ' keeps only ' + sc.join(' / ') + ' – this line is ' + l.cur + '. Change the Stock or the Currency.';
+    return '';
+  }
+  /** lines of the open bill that were taken off the grid with ✕ (they leave the bill on the next save) */
+  private removedLines() {
+    const old = this.editId ? this.S().bills.find(b => b.id === this.editId) : undefined;
+    if (!old) return [];
+    const kept = new Set(this.rows.filter(l => l.orig !== undefined).map(l => l.orig));
+    return old.rows.filter((_, i) => !kept.has(i));
+  }
+  private asking = false;
+  /** Enter on a line's last box: "Save line N?" → the bill is saved with its saved lines + this line (other lines typed but not
+   *  saved stay on screen, not saved). The first saved line makes the bill; the next ones are added to it. */
+  async rowDone(x: Line) {
+    if (this.asking) return;
+    const i = this.rows.indexOf(x), no = i + 1;
+    if (i < 0) return;
+    if (this.isSaved(x)) { this.trail(); this.focusRowParty(i + 1); return; }   // nothing new on this line – just move on
+    const err = this.lineError(x);
+    if (err) { this.ui.toast('Line ' + no + ': ' + err); return; }
+    const upd = !!x.saved;
+    this.asking = true;
+    try {
+      // the bill as it will be saved: lines already saved (as saved) + this line (as typed)
+      const keep = this.rows.filter(l => l === x || l.saved);
+      const rows = keep.map(l => l === x ? this.toRow(l) : l.saved!.row);
+      const remap: Record<number, number> = {};
+      keep.forEach((l, k) => { if (l.orig !== undefined) remap[l.orig] = k; });
+      const notes: string[] = [];
+      const lr = this.lastRate(x), rr = num(x.rate);
+      if (lr && (rr > lr * 1.3 || rr < lr * 0.7)) notes.push(`⚠️ Rate <b>${rr}</b> is far from your usual ${x.cur} rate ${lr}`);
+      notes.push(...this.shortNotes(keep.map(l => l === x ? l : this.fromRow(l.saved!.row, l)), keep.map(l => this.rows.indexOf(l) + 1)));
+      const nb = x.mode === 'bank' && this.isNewBank(x.bank) ? U(x.bank) : '', nd = x.mode === 'home' && this.isNewDealer(x.dealer) ? U(x.dealer) : '';
+      if (nb) notes.push(`➕ New bank <b>${nb}</b> will be added (A/c no. and IFSC can be added in Setup → Banks)`);
+      if (nd) notes.push(`➕ New delivery dealer <b>${nd}</b> will be added`);
+      if (this.isNewStock(x.stock)) notes.push(`➕ New stock <b>${U(x.stock)}</b> will be added`);
+      this.removedLines().forEach(r => notes.push(`🗑 Removed line <b>${r.desc}</b> ${r.cur} ${m(r.qty)} will be taken out of the bill`));
+      const other = this.rows.filter(l => l !== x && this.filled(l) && (!l.saved || this.isChanged(l))).map(l => this.rows.indexOf(l) + 1);
+      if (other.length) notes.push(`ℹ️ Line${other.length > 1 ? 's' : ''} ${other.join(', ')} not saved yet – press Enter on ${other.length > 1 ? 'their' : 'its'} last box, or Save bill`);
+      const title = (upd ? 'Update line ' : 'Save line ') + no + '? – Bill ' + (this.no || '');
+      if (!(await this.ui.confirm(title, [...notes, this.sentence({ ...x, desc: U(x.desc), stock: U(x.stock) })], upd ? '✅ Yes, update' : undefined))) {
+        this.focusRowParty(i); return;                                     // Go back → change this line
+      }
+      const accounts: any[] = [];
+      const ph = String(x.phone || '').trim();
+      if (ph) accounts.push({ name: U(x.desc), type: 'party', phone: ph });
+      const r = await this.store.save('post', '/bills', {
+        bill: { id: this.editId || undefined, no: this.no, date: this.date, rows }, remap, accounts,
+        banks: nb ? [{ name: nb, acno: '', ifsc: '', comm: num(x.comm) }] : [], dealers: nd ? [{ name: nd, comm: num(x.comm) }] : [],
+        settings: { lastMode: x.mode },
+      }, '✓ Line ' + no + (upd ? ' updated' : ' saved') + ' – Bill ' + (this.no || ''));
+      if (!r) { this.focusRowParty(i); return; }
+      if (!this.editId) this.building = true;                            // a new bill made line by line (not an opened one)
+      this.editId = r.id || this.editId; if (r.no) this.no = String(r.no);
+      keep.forEach((l, k) => { l.orig = k; if (l === x) l.saved = { row: rows[k], sig: this.sig(l) }; });
+      this.trail();
+      this.focusRowParty(i + 1);                                           // next line's Party
+    } finally { this.asking = false; }
+  }
+  /** a saved bill line back as grid boxes (only what the warnings need) */
+  private fromRow(r: BillRow, l: Line): Line {
+    return { ...l, side: this.E().rowSide(r), cur: r.cur, base: r.base || this.S().base, qty: String(r.qty), rate: String(this.E().rowRate(r)) };
+  }
+  focusRowParty(i: number) {
+    setTimeout(() => document.querySelectorAll<HTMLElement>('table.bg tbody tr')[i]?.querySelector<HTMLInputElement>('td.desc input')?.focus(), 30);
+  }
+  /** true while a new bill is being saved line by line (header still says New bill) */
+  building = false;
+  /** something on screen that is not saved yet */
+  pending() {
+    const old = this.editId ? this.S().bills.find(b => b.id === this.editId) : undefined;
+    return this.rows.some(l => this.filled(l) ? !this.isSaved(l) : !!l.saved) || this.removedLines().length > 0
+      || (!!old && (old.date !== this.date || String(old.no).trim() !== String(this.no || '').trim()));
   }
   totals() {
     let p = 0, s = 0, c = 0;
@@ -93,8 +199,8 @@ export class BillComponent implements AfterViewInit {
   }
   sentence(l: Line) {
     const amt = '₹' + m(this.lineAmt(l)), q = l.cur + ' ' + m(num(l.qty)), r = this.E().rateShort(l.cur, num(l.rate)),
-      c = num(l.comm) ? ' · commission ₹' + m(this.lineComm(l)) : '', ac = l.stock || l.desc,
-      st = l.stock ? ` · booked to stock <b>${l.stock}</b>` : '';
+      c = num(l.comm) ? ' · commission ₹' + m(this.lineComm(l)) : '', ac = l.desc,   // rupees are always with the party
+      st = U(l.stock) && U(l.stock) !== U(l.desc) ? (l.side === 'p' ? ` · ${l.cur} kept at <b>${U(l.stock)}</b>` : ` · ${l.cur} given from <b>${U(l.stock)}</b>`) : '';
     return l.side === 'p'
       ? `We <b>BUY</b> ${q} from <b>${l.desc}</b> ${r} → we must <b>PAY</b> <b>${ac}</b> ${amt} ${this.payTxt(l)}${c}${st}`
       : `We <b>SELL</b> ${q} to <b>${l.desc}</b> ${r} → <b>${ac}</b> must <b>PAY us</b> ${amt} ${this.payTxt(l)}${c}${st}`;
@@ -104,7 +210,7 @@ export class BillComponent implements AfterViewInit {
    *  "Hold" = the currency's total on the Balance sheet (all names except capital and expenses). When a bill is being edited,
    *  its saved version is taken out first. A line priced in another currency (e.g. INR priced in USDT) gives / gets that currency too.
    *  Only warns when the bill makes the position worse – a bill that buys back a short does not warn. */
-  shortNotes(LL: Line[]): string[] {
+  shortNotes(LL: Line[], nos = LL.map(l => this.rows.indexOf(l) + 1)): string[] {
     const E = this.E(), S = this.S(), base = S.base, B = E.balances();
     const held = (c: string) => Object.keys(B[c] || {}).reduce((s, a) => { const t = E.accType(a); return t === 'capital' || t === 'expense' ? s : s + B[c][a]; }, 0);
     // effect of one line on a currency: + we get it, − we give it
@@ -116,7 +222,7 @@ export class BillComponent implements AfterViewInit {
       const was = old ? old.rows.reduce((s, r) => s + eff(c, r.cur, r.base || base, E.rowSide(r) === 'p', num(r.qty), E.rowAmt(r)), 0) : 0;
       const before = r2(held(c) - was);
       let buy = 0, sell = 0; const sellLines: number[] = [];
-      LL.forEach(l => { const e = eff(c, l.cur, l.base, l.side === 'p', num(l.qty), this.lineAmt(l)); if (e > 0) buy += e; else if (e < 0) { sell -= e; sellLines.push(this.rows.indexOf(l) + 1); } });
+      LL.forEach((l, k) => { const e = eff(c, l.cur, l.base, l.side === 'p', num(l.qty), this.lineAmt(l)); if (e > 0) buy += e; else if (e < 0) { sell -= e; sellLines.push(nos[k]); } });
       const after = r2(before + buy - sell);
       if (after > -0.005 || after >= before) return [];
       return [`⚠️ <b>${c}</b>: this bill sells <b>${m(sell)}</b> but buys ${m(buy)} and you hold ${m(before)} → <b>${m(-after)} ${c} more than you have</b>`
@@ -126,13 +232,13 @@ export class BillComponent implements AfterViewInit {
 
   async saveBill() {
     const LL = this.rows.filter(l => this.filled(l));
+    if (this.editId && !this.pending()) {                                  // every line already saved one by one – nothing more to save
+      this.ui.toast(this.building ? '✓ Bill ' + this.no + ' done' : '✓ No changes – Bill ' + this.no + ' is already saved'); this.newBill(); return;
+    }
     if (!LL.length) { this.ui.toast('Type at least one line'); return; }
     for (let q = 0; q < LL.length; q++) {
-      const l = LL[q], n = 'Line ' + (q + 1) + ': ';
-      if (!U(l.desc)) { this.ui.toast(n + 'enter party name'); return; }
-      if (!(num(l.qty) > 0)) { this.ui.toast(n + 'enter quantity'); return; }
-      if (!(num(l.rate) > 0)) { this.ui.toast(n + 'enter rate'); return; }
-      if (l.cur === l.base) { this.ui.toast(n + 'Currency and Price in are the same. Change one.'); return; }
+      const err = this.lineError(LL[q]);
+      if (err) { this.ui.toast('Line ' + (q + 1) + ': ' + err); return; }
     }
     const notes: string[] = [];
     LL.forEach((l, q) => {
@@ -145,8 +251,7 @@ export class BillComponent implements AfterViewInit {
     nb.forEach(b => notes.push(`➕ New bank <b>${b}</b> will be added (A/c no. and IFSC can be added in Setup → Banks)`));
     nd.forEach(d => notes.push(`➕ New delivery dealer <b>${d}</b> will be added`));
     [...new Set(LL.filter(l => this.isNewStock(l.stock)).map(l => U(l.stock)))].forEach(s => notes.push(`➕ New stock <b>${s}</b> will be added`));
-    LL.forEach(l => { l.desc = U(l.desc); l.stock = U(l.stock); l.bank = U(l.bank) || 'BANK'; l.dealer = U(l.dealer);
-      if (this.E().isOwnStock(l.stock)) l.stock = ''; });   // "SGD STOCK" typed in Stock = our own stock = same as empty
+    LL.forEach(l => { l.desc = U(l.desc); l.stock = U(l.stock); l.bank = U(l.bank) || 'BANK'; l.dealer = U(l.dealer); });
     if (!(await this.ui.confirm('Please check – Bill ' + (this.no || ''), [...notes, ...LL.map(l => this.sentence(l))]))) return;
     const accounts: any[] = [];
     const banks = nb.map(name => ({ name, acno: '', ifsc: '', comm: num(LL.find(l => l.mode === 'bank' && l.bank === name)!.comm) }));
@@ -174,7 +279,7 @@ export class BillComponent implements AfterViewInit {
   newBill() {
     const last = this.rows.filter(l => this.filled(l)).pop() || this.rows[this.rows.length - 1];
     if (this.editId) this.date = today();   // leaving an old bill → new bills start today, not on the old bill's date
-    this.editId = null; this.rows = [this.newLine(last)]; this.no = String(this.E().nextBillNo()); this.focusParty();
+    this.editId = null; this.building = false; this.rows = [this.newLine(last)]; this.no = String(this.E().nextBillNo()); this.focusParty();
   }
 
   /** Type an earlier Bill No. → that bill opens for editing (same as ✏️ Edit).
@@ -214,11 +319,15 @@ export class BillComponent implements AfterViewInit {
     setTimeout(() => { const tr = document.querySelectorAll<HTMLElement>('table.bg tbody tr'); tr[tr.length - 1]?.querySelector<HTMLInputElement>('td.desc input')?.focus(); }, 30);
   }
   openBill(b: Bill) {
-    this.editId = b.id; this.no = b.no; this.date = b.date;
+    this.editId = b.id; this.building = false; this.no = b.no; this.date = b.date;
     // WhatsApp starts empty – only a number typed here is saved (an empty box keeps the number already saved)
-    this.rows = b.rows.map((r, i) => ({ desc: r.desc, phone: '', side: this.E().rowSide(r), cur: r.cur, base: r.base,
-      qty: String(r.qty), rate: String(this.E().rowRate(r)), inv: this.invCur(r.cur) ? String(+(1 / this.E().rowRate(r)).toFixed(6)) : '',
-      stock: r.stock, mode: r.mode, bank: r.bank || 'BANK', dealer: r.dealer, comm: r.comm ? String(r.comm) : '', orig: i }));
+    this.rows = b.rows.map((r, i) => {
+      const l: Line = { desc: r.desc, phone: '', side: this.E().rowSide(r), cur: r.cur, base: r.base,
+        qty: String(r.qty), rate: String(this.E().rowRate(r)), inv: this.invCur(r.cur) ? String(+(1 / this.E().rowRate(r)).toFixed(6)) : '',
+        stock: r.stock, mode: r.mode, bank: r.bank || 'BANK', dealer: r.dealer, comm: r.comm ? String(r.comm) : '', orig: i };
+      l.saved = { row: { ...r }, sig: this.sig(l) };   // opened lines count as saved – Enter on an unchanged line just moves on
+      return l;
+    });
     this.rows.push(this.newLine(this.rows[this.rows.length - 1]));
     window.scrollTo(0, 0);
   }
@@ -284,7 +393,7 @@ export class BillComponent implements AfterViewInit {
     accounts.push({ name: ac, type: accType });
     const bk = P.mode === 'bank' ? this.E().bankBy(ac) : undefined, who = U(P.person);
     const note = 'Bill ' + b.no + ' · ' + PMODES[P.mode] + (accType === 'dealer' ? ' · dealer ' + ac : '') + (bk ? ' · ' + bk.name + (bk.acno ? ' ' + last4(bk.acno) : '') : '') + (who ? ' · ' + who : '') + (P.ref ? ' · Ref ' + P.ref : '');
-    const ok = await this.ui.confirm('Please check', [(sd === 'p' ? 'We <b>PAY</b> ' : 'We <b>GET</b> ') + '₹' + m(amt) + (sd === 'p' ? ' to <b>' : ' from <b>') + bookTo + '</b> ' + (r.stock ? '(for ' + r.desc + ') ' : '') + this.payTxt({ ...P, bank: ac, dealer: accType === 'dealer' ? ac : '' })
+    const ok = await this.ui.confirm('Please check', [(sd === 'p' ? 'We <b>PAY</b> ' : 'We <b>GET</b> ') + '₹' + m(amt) + (sd === 'p' ? ' to <b>' : ' from <b>') + bookTo + '</b> ' + this.payTxt({ ...P, bank: ac, dealer: accType === 'dealer' ? ac : '' })
       + (cm ? ' · commission ₹' + m(r2(amt * cm / 100000)) : '')
       + (left >= 1 ? ' · <b>₹' + m(left) + ' will still be pending</b>' : '')]);
     if (!ok) return;

@@ -10,7 +10,7 @@ import { m, num, U, r2, today, dmy, drcr } from '../core/fmt';
 
 /** One row of the voucher grid. saved = already saved (Enter on Remarks → Yes, or opened from an earlier voucher); jid = its saved entry;
  *  editing = a saved row unlocked with ✏️ and being changed. */
-interface VLine { desc: string; mode: CbMode; bank: string; out: string; inn: string; exp: string; other: string; note: string; saved?: boolean; jid?: string; editing?: boolean; }
+interface VLine { desc: string; mode: CbMode; bank: string; out: string; inn: string; exp: string; from: string; note: string; saved?: boolean; jid?: string; editing?: boolean; }
 interface Item { k: 'jv' | 'bill'; date: string; t: number; n: number; j?: Jv; b?: Bill; r?: BillRow; i?: number; cb?: number; cd?: number; }
 /** What we know about a saved name typed in Description (null parts = this login may not see them). */
 interface AccInfo {
@@ -37,7 +37,7 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
   private scrolled = 0;
 
   constructor() { this.cur = this.S().base; this.vno = String(this.E().nextVno()); }
-  empty(): VLine { return { desc: '', mode: 'cash', bank: 'BANK', out: '', inn: '', exp: '', other: '', note: '' }; }
+  empty(): VLine { return { desc: '', mode: 'cash', bank: 'BANK', out: '', inn: '', exp: '', from: '', note: '' }; }
   filled(x: VLine) { return !!(U(x.desc) || num(x.out) || num(x.inn) || num(x.exp)); }
   unsaved(x: VLine) { return this.filled(x) && !x.saved; }
   /** Saved and not being changed → its boxes are locked. */
@@ -45,15 +45,57 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
   /** Rows with something not saved yet: new lines and saved lines being changed. */
   pendingRows() { return this.rows.filter(x => this.unsaved(x) || !!x.editing); }
   /** Money effect of a row on cash in hand / expenses (Cash and Hand cash are both cash in hand). */
-  private cashEff(x: VLine) { const a = this.amt(x); return !a || U(x.other) || x.mode === 'bank' ? 0 : this.dir(x) === 'in' ? a : -a; }
+  /** + into / − out of cash in hand (cash accounts and stock / wallet companies), from the names this row debits / credits. */
+  private cashEff(x: VLine) {
+    const a = this.amt(x); if (!a) return 0;
+    const E = this.E(), d = this.dir(x), desc = U(x.desc) || (d === 'exp' ? 'EXPENSES' : ''), c = this.counter(x);
+    const dr = d === 'in' ? c : desc, cr = d === 'in' ? desc : c;
+    return (E.isCashLike(dr) ? a : 0) - (E.isCashLike(cr) ? a : 0);
+  }
   private expEff(x: VLine) { return this.dir(x) === 'exp' ? this.amt(x) : 0; }
   /** The saved version of a row being changed (null for others). */
   private orig(x: VLine) { const j = x.editing ? this.savedJv(x) : undefined; return j ? this.fromJv(j) : null; }
   trail() { if (this.filled(this.rows[this.rows.length - 1])) this.rows.push(this.empty()); }
   amtChanged(x: VLine, k: 'out' | 'inn' | 'exp') { if (num(x[k])) (['out', 'inn', 'exp'] as const).forEach(o => { if (o !== k) x[o] = ''; }); this.trail(); }
-  dir(x: VLine): 'out' | 'in' | 'exp' { return num(x.inn) ? 'in' : num(x.exp) ? 'exp' : 'out'; }
+  dir(x: VLine): 'out' | 'in' | 'exp' {
+    if (this.flow(x) === 'from') return num(x.exp) ? 'exp' : 'out';   // From's money given to Description (or paying our expense)
+    return num(x.inn) ? 'in' : num(x.exp) ? 'exp' : 'out';
+  }
   amt(x: VLine) { return num(x.out) || num(x.inn) || num(x.exp); }
-  counter(x: VLine) { return U(x.other) || this.modeAcc(x.mode, x.bank); }
+  /** From – someone else's money, our cash / bank is not used: the From name's money is given to Description. */
+  flow(x: VLine): '' | 'from' { return U(x.from) ? 'from' : ''; }
+  /** the From name ('' = none – our cash / bank is used) */
+  other(x: VLine) { return U(x.from); }
+  counter(x: VLine) { return this.other(x) || this.modeAcc(x.mode, x.bank); }
+  /** From filled → money between two names; Mode and Bank are not used. */
+  hasOther(x: VLine) { return !!this.other(x); }
+  /** From typed: the amount goes in Cash Out (taken from From, given to Description). */
+  fromChanged(x: VLine) {
+    if (this.flow(x) === 'from' && num(x.inn)) { x.out = x.inn; x.inn = ''; }
+    this.autoCur(x);
+    this.trail();
+  }
+  descChanged(x: VLine) { this.autoCur(x); this.trail(); }
+
+  /* ---------- a stock company keeps only its own currency (e.g. MY SGD COMPANY → SGD) ---------- */
+  /** The currencies the names on this row are tied to ('' names and parties are free). */
+  private rowCurs(x: VLine) {
+    const E = this.E();
+    return [U(x.desc), U(x.from)].filter(n => n).map(n => ({ n, c: E.stockCurs(n) })).filter(o => o.c.length);
+  }
+  /** Message when a name on the row keeps another currency than this voucher ('' = fine). */
+  curMismatch(x: VLine): string {
+    const bad = this.rowCurs(x).find(o => !o.c.includes(this.cur));
+    return bad ? `${bad.n} keeps only ${bad.c.join(' / ')} – use the ${bad.c[0]} tab (this voucher is ${this.cur})` : '';
+  }
+  /** Typing a stock company on an otherwise empty voucher switches to its currency by itself. */
+  private autoCur(x: VLine) {
+    const bad = this.rowCurs(x).find(o => !o.c.includes(this.cur)); if (!bad) return;
+    const alone = !this.loadedVno && !this.rows.some(r => r !== x && (r.saved || this.filled(r)));
+    if (!alone) return;   // other lines already in this currency – Save will say what is wrong
+    this.cur = bad.c[0];
+    this.ui.toast('Switched to ' + this.cur + ' – ' + bad.n + ' keeps ' + bad.c.join(' / '));
+  }
   /** Account a mode pays from / into: Cash → CASH, Hand cash → HAND CASH, Bank → the chosen bank. */
   modeAcc(mode: CbMode, bank: string) { return mode === 'bank' ? (bank || 'BANK') : mode === 'hand' ? HAND_CASH : 'CASH'; }
 
@@ -112,8 +154,11 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
   }
   sentence(x: VLine, cur = this.cur) {
     const a = (cur === this.S().base ? '₹' : cur + ' ') + m(this.amt(x)), d = U(x.desc) || 'EXPENSES', via = x.mode === 'bank' ? 'Bank' + (x.bank && x.bank !== 'BANK' ? ' (' + x.bank + ')' : '') : x.mode === 'hand' ? 'Hand cash' : 'Cash';
-    if (U(x.other)) return `<b>${U(x.other)}</b> pays <b>${d}</b> ${a} for us`;
-    const k = this.dir(x);
+    const k = this.dir(x), o = this.other(x);
+    if (o) {   // From: someone else's money – our cash / bank is not touched
+      if (k === 'exp') return `Take ${a} from <b>${o}</b> → pay our expense <b>${d}</b> (our cash not touched)`;
+      return `Take ${a} from <b>${o}</b> → give to <b>${d}</b> (our cash not touched)`;
+    }
     if (k === 'exp') return `We <b>SPEND</b> ${a} on <b>${d}</b> from ${via}`;
     if (d === 'CAPITAL' && k === 'in') return `Owner puts <b>${a}</b> into ${via} (capital)`;
     return k === 'out' ? `We <b>GIVE</b> ${a} to <b>${d}</b> from ${via}` : `We <b>GET</b> ${a} from <b>${d}</b> into ${via}`;
@@ -150,20 +195,22 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
 
   /** What is wrong with one line ('' = fine). An expense line with no description becomes EXPENSES. */
   lineError(y: VLine): string {
+    const wrong = this.curMismatch(y);
+    if (wrong) return wrong;
     if (this.dir(y) === 'exp') { if (!U(y.desc)) y.desc = 'EXPENSES'; else if (this.S().accounts[U(y.desc)] && this.E().accType(U(y.desc)) !== 'expense') return U(y.desc) + ' is not an expense. Use RENT, TEA, SALARY…'; }
     if (!U(y.desc)) return 'enter Description';
     if (!(this.amt(y) > 0)) return 'enter Cash In, Cash Out or Expense amount';
-    if (U(y.other) && U(y.other) === U(y.desc)) return 'From/To must be different';
-    if (!U(y.other) && U(y.desc) === this.counter(y)) return 'Description can’t be ' + this.counter(y) + '. Use CAPITAL + Cash In to add your own money.';
+    if (this.other(y) && this.other(y) === U(y.desc)) return 'From must be different from Description';
+    if (!this.other(y) && U(y.desc) === this.counter(y)) return 'Description can’t be ' + this.counter(y) + '. Use CAPITAL + Cash In to add your own money.';
     return '';
   }
   /** One line → the jv record the API saves; the accounts it uses are added to `accounts`. */
   toEntry(x: VLine, date: string, vno: string, cur: string, accounts: any[]) {
     const S = this.S(), d = this.dir(x), desc = U(x.desc), c = this.counter(x);
     const t = d === 'exp' ? 'expense' : (S.accounts[desc] ? this.E().accType(desc) : (desc === 'CAPITAL' ? 'capital' : /EXPENSE/.test(desc) ? 'expense' : 'party'));
-    accounts.push({ name: desc, type: t }, { name: c, type: U(x.other) ? 'party' : (x.mode === 'bank' ? 'bank' : 'cash') });
+    accounts.push({ name: desc, type: t }, { name: c, type: this.hasOther(x) ? 'party' : (x.mode === 'bank' ? 'bank' : 'cash') });
     return { date, vno, type: d, desc, dr: d === 'in' ? c : desc, cr: d === 'in' ? desc : c, cur, amt: r2(this.amt(x)), note: x.note,
-      mode: U(x.other) ? '' : x.mode, bank: x.mode === 'bank' && !U(x.other) ? x.bank : '' };
+      mode: this.hasOther(x) ? '' : x.mode, bank: x.mode === 'bank' && !this.hasOther(x) ? x.bank : '' };
   }
 
   /** Saves new lines and lines being changed, then starts the next voucher. */
@@ -197,8 +244,11 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
   fromJv(j: Jv): VLine {
     const r = this.E().jvRow(j), a = String(j.amt);
     const mode: CbMode = r.bank ? 'bank' : (j.mode === 'hand' || j.dr === HAND_CASH || j.cr === HAND_CASH) ? 'hand' : 'cash';
-    return { desc: r.desc, mode, bank: r.bank || 'BANK', out: r.dir === 'out' ? a : '', inn: r.dir === 'in' ? a : '', exp: r.dir === 'exp' ? a : '',
-      other: r.other, note: j.note || '', saved: true, jid: j.id };
+    // an older "To" line (Description's money given to another name) shows as From: that name gets it, From = Description – same booking
+    const toLine = r.dir === 'in' && !!r.other;
+    return { desc: toLine ? r.other : r.desc, mode, bank: r.bank || 'BANK',
+      out: r.dir === 'out' || toLine ? a : '', inn: r.dir === 'in' && !toLine ? a : '', exp: r.dir === 'exp' ? a : '',
+      from: toLine ? r.desc : r.other, note: j.note || '', saved: true, jid: j.id };
   }
   async vnoChanged(curPref?: string) {
     const v = String(this.vno || '').trim();
@@ -297,7 +347,7 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
     S.jv.forEach(j => items.push({ k: 'jv', date: j.date, t: this.idTime(j.id), n: j.no || 0, j }));
     if (showBills) S.bills.forEach(b => b.rows.forEach((r, i) => items.push({ k: 'bill', date: b.date, t: this.idTime(b.id), n: i, b, r, i })));
     items.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (a.t - b.t) || (a.n - b.n));
-    const run: Record<string, number> = {}, isCash = (n: string) => E.accType(n) === 'cash';
+    const run: Record<string, number> = {}, isCash = (n: string) => E.isCashLike(n);   // stock / wallet counts as cash in hand
     items.forEach(it => { if (it.k !== 'jv') return; const j = it.j!, d = (isCash(j.dr) ? j.amt : 0) - (isCash(j.cr) ? j.amt : 0); run[j.cur] = (run[j.cur] || 0) + d; it.cb = run[j.cur]; it.cd = d; });
     return { items, run };
   });

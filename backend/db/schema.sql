@@ -106,15 +106,11 @@ ON CONFLICT (key) DO NOTHING;
 INSERT INTO accounts(name,type) VALUES ('CASH','cash'),('HAND CASH','cash'),('BANK','bank'),('EXPENSES','expense'),('CAPITAL','capital')
 ON CONFLICT (name) DO NOTHING;
 
--- A bill line with a Stock is booked to the stock company (no Stock = the party).
--- Move payments / receipts saved before this rule from the party to the stock company. Safe to run again.
-UPDATE jv SET dr = br.stock FROM bill_rows br
+-- "Currency in whose hand": rupees of a bill line are always with the party; only the currency sits at the Stock place.
+-- Move payments / receipts that an earlier rule put on the Stock place back to the party. Safe to run again.
+UPDATE jv SET dr = br.descr FROM bill_rows br
  WHERE jv.link_bill = br.bill_id AND jv.link_line = br.line AND NOT jv.link_comm
-   AND br.stock <> '' AND jv.type = 'payment' AND jv.dr = br.descr;
-UPDATE jv SET cr = br.stock FROM bill_rows br
+   AND br.stock <> '' AND br.stock <> br.descr AND jv.type = 'payment' AND jv.dr = br.stock;
+UPDATE jv SET cr = br.descr FROM bill_rows br
  WHERE jv.link_bill = br.bill_id AND jv.link_line = br.line AND NOT jv.link_comm
-   AND br.stock <> '' AND jv.type = 'receipt' AND jv.cr = br.descr;
-
--- A bill line with no Stock keeps its currency in our own stock account ("SGD STOCK"). Create those for older bills. Safe to run again.
-INSERT INTO accounts(name,type) SELECT DISTINCT cur || ' STOCK', 'stock' FROM bill_rows WHERE stock = ''
-ON CONFLICT (name) DO NOTHING;
+   AND br.stock <> '' AND br.stock <> br.descr AND jv.type = 'receipt' AND jv.cr = br.stock;

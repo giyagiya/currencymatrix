@@ -2,7 +2,7 @@
 
 @if (auth.canPage('bill')) {
 <div class="card newentry">
-  <h2 class="sech">{{ editId ? '✏️ Edit bill' : '➕ New bill' }} <small>Bill {{ no }}</small></h2>
+  <h2 class="sech">{{ editId && !building ? '✏️ Edit bill' : '➕ New bill' }} <small>Bill {{ no }}</small></h2>
   <div class="bh">
     <div class="bh-f"><label>Date</label><input type="date" [(ngModel)]="date"></div>
     <div class="bh-f"><label>Bill No.</label><input [(ngModel)]="no" inputmode="numeric" (change)="billNoChanged()" (keydown.enter)="billNoChanged()"
@@ -15,11 +15,12 @@
     <colgroup><col class="c-idx"><col class="c-party"><col class="c-type"><col class="c-cur"><col class="c-num"><col class="c-num"><col class="c-amt"><col class="c-pay"><col class="c-bank"><col class="c-comm">
       @if (more) { <col class="c-stock"><col class="c-base"><col class="c-wa"> }<col class="c-x"></colgroup>
     <thead><tr><th title="Line">#</th><th class="desc">Party</th><th>Type</th><th>Currency</th><th class="n">Quantity</th><th class="n">Rate</th><th class="n">Amount</th>
-      <th>Pay by</th><th>Bank / Dealer</th><th class="n">Comm./<wbr>lakh</th>@if (more) { <th>Stock</th><th>Price in</th><th>WhatsApp</th> }<th></th></tr></thead>
+      <th>Pay by</th><th>Bank / Dealer</th><th class="n">Comm./<wbr>lakh</th>@if (more) { <th title="Purchase: where the currency is kept · Sale: where it is sold from">Stock <small>kept at / from</small></th><th>Price in</th><th>WhatsApp</th> }<th></th></tr></thead>
     <tbody>
       @for (x of rows; track x; let i = $index) {
-        <tr [class.pur]="filled(x) && x.side === 'p'" [class.sale]="filled(x) && x.side === 's'">
-          <td class="idx">{{ i + 1 }}</td>
+        <tr [class.pur]="filled(x) && x.side === 'p'" [class.sale]="filled(x) && x.side === 's'" [class.savedrow]="isSaved(x)" [class.editrow]="isChanged(x)"
+            [title]="isSaved(x) ? 'Line ' + (i + 1) + ' saved' : isChanged(x) ? 'Changed – Enter on the last box to update this line' : ''">
+          <td class="idx">{{ isChanged(x) ? '✏️' : isSaved(x) ? '✓' : i + 1 }}</td>
           <td class="desc"><input [(ngModel)]="x.desc" (ngModelChange)="trail()" list="dl-acc" class="up" autocomplete="off" placeholder="Name"></td>
           <td><select [(ngModel)]="x.side" class="side"><option value="p">Purchase</option><option value="s">Sale</option></select></td>
           <td><select [(ngModel)]="x.cur">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></td>
@@ -34,7 +35,10 @@
             @else { <input disabled placeholder="—"> }</td>
           <td class="n"><input [(ngModel)]="x.comm" inputmode="decimal" placeholder="0"></td>
           @if (more) {
-            <td><input [(ngModel)]="x.stock" list="dl-stock" class="up" autocomplete="off" placeholder="None" [class.newname]="isNewStock(x.stock)" [title]="isNewStock(x.stock) ? 'New stock – added when you save' : 'Optional – pick a stock only when needed'"></td>
+            <td><input [(ngModel)]="x.stock" list="dl-stock" class="up" autocomplete="off" [placeholder]="x.side === 's' ? 'From (party)' : 'With party'"
+              [class.newname]="isNewStock(x.stock)" [title]="isNewStock(x.stock) ? 'New stock – added when you save'
+                : x.side === 's' ? 'Whose hand the currency is given FROM (e.g. MY SGD COMPANY, KUMAR). Empty = the buyer\'s own account (we still owe it to them). Rupees always stay with the party.'
+                : 'Whose hand the bought currency is KEPT in (e.g. MY SGD COMPANY). Empty = it stays with the party. Rupees always stay with the party.'"></td>
             <td><select [(ngModel)]="x.base">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></td>
             <td><input [(ngModel)]="x.phone" inputmode="tel" placeholder="optional" autocomplete="off"></td>
           }
@@ -44,8 +48,9 @@
     </tbody>
   </table></div>
 
-  <div class="hint">Type one line per row – a new row appears by itself. <b>Enter</b> goes box by box across the whole line, then to the next line
-    (Pay by, Bank, Commission… start with the row above's choice). A new bank, dealer or stock name is added when you save.</div>
+  <div class="hint">Type one line per row – a new row appears by itself. <b>Enter</b> goes box by box across the whole line; Enter on the line's
+    <b>last box</b> asks <b>Save line?</b> and then goes to the next line (✓ = saved). Pay by, Bank, Commission… start with the row above's choice.
+    A new bank, dealer or stock name is added when you save.</div>
 
   @if (totals(); as t) {
     <div class="tots">
@@ -57,7 +62,7 @@
     </div>
   }
   <div class="acts">
-    <button class="pr" (click)="saveBill()" [disabled]="store.busy()">💾 {{ editId ? 'Update bill' : 'Save bill' }}</button>
+    <button class="pr" (click)="saveBill()" [disabled]="store.busy()">💾 {{ editId && !building ? 'Update bill' : 'Save bill' }}</button>
     <button (click)="newBill()">New bill</button>
   </div>
 </div>

@@ -164,6 +164,7 @@ table.g td input,table.g td select{border:0;border-radius:0;padding:8px;backgrou
 table.g td.idx{text-align:center;color:var(--mut);width:40px}
 table.g td.n input{text-align:right}
 table.g .desc{min-width:170px}
+table.g .ft{min-width:130px}
 table.g select{min-width:78px}
 /* bill entry grid */
 /* Fits the card (no side scroll) on laptops and up: short columns keep a fixed width, the name columns

@@ -12,17 +12,19 @@
   </div>
 
   <div class="gridwrap vgw"><table class="g vg">
-    <thead><tr><th>S.No.</th><th class="desc">Description</th><th>Mode</th><th>Bank A/c</th><th class="n">Cash In</th><th class="n">Cash Out</th><th class="n">EXPENSE</th><th>Remarks</th><th></th></tr></thead>
+    <thead><tr><th>S.No.</th><th class="desc">Description</th><th class="ft" title="The person we TAKE the money from and give to Description – our cash is not touched">From <small>take from</small></th><th>Mode</th><th>Bank A/c</th><th class="n">Cash In</th><th class="n">Cash Out</th><th class="n">EXPENSE</th><th>Remarks</th><th></th></tr></thead>
     <tbody>
       @for (x of rows; track x; let i = $index) {
         <tr (focusin)="act = x" [class.actrow]="act === x && !!accInfo() && !x.saved" [class.savedrow]="locked(x)" [class.editrow]="x.editing"
             [title]="locked(x) ? 'Saved – change it with ✏️' : x.editing ? 'Changing a saved line – Enter on Remarks to update, ↩ to undo' : ''">
           <td class="idx">{{ x.editing ? '✏️' : x.saved ? '✓' : i + 1 }}</td>
-          <td class="desc"><input [(ngModel)]="x.desc" (ngModelChange)="trail()" list="dl-acc2" class="up" autocomplete="off" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"></td>
-          <td><select [(ngModel)]="x.mode" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"><option value="cash">Cash</option><option value="hand">Hand cash</option><option value="bank">Bank</option></select></td>
-          <td><select [(ngModel)]="x.bank" [disabled]="x.mode !== 'bank' || locked(x)"><option value="BANK">BANK</option>@for (b of S().banks; track b.name) { <option [value]="b.name">{{ b.name }}</option> }
+          <td class="desc"><input [(ngModel)]="x.desc" (ngModelChange)="descChanged(x)" list="dl-acc2" class="up" autocomplete="off" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"></td>
+          <td class="ft"><input [(ngModel)]="x.from" (ngModelChange)="fromChanged(x)" list="dl-acc2" class="up" autocomplete="off" placeholder="—" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"
+            title="FROM: the person we TAKE the money from (e.g. MY SGD COMPANY). It is given to Description. Empty = our own Cash / Bank."></td>
+          <td><select [(ngModel)]="x.mode" (keydown.enter)="nextBox($event)" [disabled]="locked(x) || hasOther(x)"><option value="cash">Cash</option><option value="hand">Hand cash</option><option value="bank">Bank</option></select></td>
+          <td><select [(ngModel)]="x.bank" [disabled]="x.mode !== 'bank' || locked(x) || hasOther(x)"><option value="BANK">BANK</option>@for (b of S().banks; track b.name) { <option [value]="b.name">{{ b.name }}</option> }
             @if (x.bank && x.bank !== 'BANK' && !hasBank(x.bank)) { <option [value]="x.bank">{{ x.bank }}</option> }</select></td>
-          <td class="n"><input class="vin" [(ngModel)]="x.inn" (ngModelChange)="amtChanged(x, 'inn')" inputmode="decimal" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"></td>
+          <td class="n"><input class="vin" [(ngModel)]="x.inn" (ngModelChange)="amtChanged(x, 'inn')" inputmode="decimal" (keydown.enter)="nextBox($event)" [disabled]="locked(x) || flow(x) === 'from'"></td>
           <td class="n"><input class="vout" [(ngModel)]="x.out" (ngModelChange)="amtChanged(x, 'out')" inputmode="decimal" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"></td>
           <td class="n"><input class="vexp" [(ngModel)]="x.exp" (ngModelChange)="amtChanged(x, 'exp')" inputmode="decimal" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"></td>
           <td><input [(ngModel)]="x.note" (keydown.enter)="rowDone($event, x)" [disabled]="locked(x)" [placeholder]="x.editing ? 'Enter = update line' : x.saved || !filled(x) ? '' : 'Enter = save line'"></td>
@@ -86,7 +88,7 @@
       }
     </div>
   }
-  <div class="hint">Cash In = we get · Cash Out = we give · EXPENSE = we spend. Enter moves to the next box · <b>Enter on Remarks</b> asks to save that line
+  <div class="hint">Cash In = we get · Cash Out = we give · EXPENSE = we spend · <b>From</b> = we take the money from that person and give it to Description (our cash is not touched). Enter moves to the next box · <b>Enter on Remarks</b> asks to save that line
     (Enter = yes, Esc = go back and edit) · <b>✏️</b> changes a saved line right here · <b>Save voucher</b> saves any lines not saved or changed yet.</div>
   <div class="acts">
     <button class="pr" (click)="saveVoucher()" [disabled]="store.busy()">💾 Save voucher</button>
@@ -117,7 +119,7 @@
             @if (E().jvRow(it.j!); as r) {
               <td>{{ dmy(it.j!.date) }}</td>
               <td><span class="rt" [class.rpay]="it.j!.link" [class.rv]="!it.j!.link">{{ it.j!.link ? 'Payment' : 'Voucher' }}</span>@if (it.j!.vno) { <span class="tno">{{ it.j!.vno }}</span> }</td>
-              <td><b>{{ r.desc }}</b>@if (r.other) { <div class="sub">From/To {{ r.other }}</div> }@if (r.rem) { <div class="fold" [title]="r.rem">{{ r.rem }}</div> }</td>
+              <td><b>{{ r.desc }}</b>@if (r.other) { <div class="sub">{{ r.dir === 'in' ? 'To ' : 'From ' }}{{ r.other }}</div> }@if (r.rem) { <div class="fold" [title]="r.rem">{{ r.rem }}</div> }</td>
               <td>{{ r.mode }}{{ r.bank ? ' · ' + r.bank : '' }}</td><td>{{ it.j!.cur }}</td>
               <td class="n vin">{{ r.dir === 'in' ? m(it.j!.amt) : '' }}</td><td class="n vout">{{ r.dir === 'out' ? m(it.j!.amt) : '' }}</td><td class="n vexp">{{ r.dir === 'exp' ? m(it.j!.amt) : '' }}</td>
               <td></td><td class="n cbal" [class.neg]="(it.cb || 0) < 0" [class.sub]="!it.cd">{{ m(it.cb || 0) }}</td><td class="rem wide"><div class="clip" [title]="r.rem">{{ r.rem }}</div></td>

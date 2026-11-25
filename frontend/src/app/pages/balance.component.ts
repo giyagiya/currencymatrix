@@ -38,7 +38,7 @@ import { m, num, today } from '../core/fmt';
           }
           <tr class="bs-tot"><td></td><td class="n">{{ m(b.dr) }}</td><td class="n">{{ m(b.cr) }}</td></tr>
           <tr class="bs-s"><td class="l">Outstanding value</td><td class="n">{{ m(b.os) }}</td><td></td></tr>
-          <tr class="bs-s"><td class="l">Cash in hand value</td><td class="n">{{ m(b.cash) }}</td><td></td></tr>
+          <tr class="bs-s"><td class="l" title="Cash accounts and stock / wallet companies">Cash in hand value <small class="sub">incl. stock / wallet</small></td><td class="n">{{ m(b.cash) }}</td><td></td></tr>
           <tr class="bs-s"><td class="l">Bank value</td><td class="n">{{ m(b.bank) }}</td><td></td></tr>
           <tr class="bs-s"><td class="l">Total</td><td class="n dash">{{ m(b.total) }}</td><td></td></tr>
           <tr class="bs-s"><td class="l">Credit outstanding value</td><td class="n">{{ m(b.cos) }}</td><td></td></tr>
@@ -147,7 +147,7 @@ export class BalanceComponent {
     this.blocks().forEach(b => {
       b.rows.forEach(r => out.push([b.cur, r.a, this.TYPES[r.t], r.b > 0 ? n(r.b) : '', r.b < 0 ? n(-r.b) : '']));
       out.push([b.cur, 'TOTAL', '', n(b.dr), n(b.cr)]);
-      ([['OUTSTANDING VALUE', b.os], ['CASH IN HAND VALUE', b.cash], ['BANK VALUE', b.bank], ['TOTAL', b.total], ['CREDIT OUTSTANDING VALUE', b.cos],
+      ([['OUTSTANDING VALUE', b.os], ['CASH IN HAND VALUE (INCL. STOCK / WALLET)', b.cash], ['BANK VALUE', b.bank], ['TOTAL', b.total], ['CREDIT OUTSTANDING VALUE', b.cos],
         ['EXPENSES (ALREADY INCLUDED)', b.exp], ['NET TOTAL', b.net], ...(b.cap ? [['CAPITAL (YOUR MONEY)', b.cap]] : [])] as [string, number][])
         .forEach(([l, v]) => out.push([b.cur, l, '', n(v), '']));
       out.push([]);

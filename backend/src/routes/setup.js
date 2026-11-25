@@ -174,7 +174,7 @@ r.post('/import', needSuper, async (req, res) => {
       let i = 0;
       for (const x of b.rows || []) {
         await ensureAccounts(db, [{ name: x.desc, type: 'party' }]);
-        await ensureAccounts(db, [{ name: U(x.stock) || U(x.cur) + ' STOCK', type: 'stock' }]);   // stock company, or our own "SGD STOCK"
+        if (x.stock) await ensureAccounts(db, [{ name: U(x.stock), type: 'stock' }]);   // where the currency is kept / given from
         await db.query(`INSERT INTO bill_rows(bill_id,line,descr,cur,base,qty,prate,srate,stock,mode,bank,dealer,comm)
           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
           [b.id, i++, U(x.desc), U(x.cur), U(x.base) || S.base || 'INR', num(x.qty), num(x.prate), num(x.srate), U(x.stock), ['bank', 'shop', 'home'].includes(x.mode) ? x.mode : 'bank', U(x.bank), U(x.dealer), num(x.comm)]);
