@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { StoreService } from '../core/store.service';
 import { AuthService } from '../core/auth.service';
 import { UiService } from '../shared/ui.service';
-import { Jv, BillRow, Bill, PMODES, VM, TYPES, CbMode, HAND_CASH } from '../core/models';
+import { Jv, BillRow, Bill, PMODES, VM, TYPES, CbMode, HAND_CASH, HAND_CASH_OLD } from '../core/models';
 import { Engine, LedgerLine } from '../core/engine';
 import { m, num, U, r2, today, dmy, drcr } from '../core/fmt';
 
@@ -44,7 +44,7 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
   locked(x: VLine) { return !!x.saved && !x.editing; }
   /** Rows with something not saved yet: new lines and saved lines being changed. */
   pendingRows() { return this.rows.filter(x => this.unsaved(x) || !!x.editing); }
-  /** Money effect of a row on cash in hand / expenses (Cash and Hand cash are both cash in hand). */
+  /** Money effect of a row on cash in hand / expenses (Cash and Hand loan are both cash in hand). */
   /** + into / − out of cash in hand (cash accounts and stock / wallet companies), from the names this row debits / credits. */
   private cashEff(x: VLine) {
     const a = this.amt(x); if (!a) return 0;
@@ -96,7 +96,7 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
     this.cur = bad.c[0];
     this.ui.toast('Switched to ' + this.cur + ' – ' + bad.n + ' keeps ' + bad.c.join(' / '));
   }
-  /** Account a mode pays from / into: Cash → CASH, Hand cash → HAND CASH, Bank → the chosen bank. */
+  /** Account a mode pays from / into: Cash → CASH, Hand loan → HAND LOAN, Bank → the chosen bank. */
   modeAcc(mode: CbMode, bank: string) { return mode === 'bank' ? (bank || 'BANK') : mode === 'hand' ? HAND_CASH : 'CASH'; }
 
   /* ---------- details of a saved name typed in Description (shown under the grid) ---------- */
@@ -153,7 +153,7 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
     return { o, i, e, net: i - o - e, c0, cd, c1: c0 + cd, tp, p1: tp - eu * E.curRate(this.cur), ex: eu * E.curRate(this.cur) };
   }
   sentence(x: VLine, cur = this.cur) {
-    const a = (cur === this.S().base ? '₹' : cur + ' ') + m(this.amt(x)), d = U(x.desc) || 'EXPENSES', via = x.mode === 'bank' ? 'Bank' + (x.bank && x.bank !== 'BANK' ? ' (' + x.bank + ')' : '') : x.mode === 'hand' ? 'Hand cash' : 'Cash';
+    const a = (cur === this.S().base ? '₹' : cur + ' ') + m(this.amt(x)), d = U(x.desc) || 'EXPENSES', via = x.mode === 'bank' ? 'Bank' + (x.bank && x.bank !== 'BANK' ? ' (' + x.bank + ')' : '') : x.mode === 'hand' ? 'Hand loan' : 'Cash';
     const k = this.dir(x), o = this.other(x);
     if (o) {   // From: someone else's money – our cash / bank is not touched
       if (k === 'exp') return `Take ${a} from <b>${o}</b> → pay our expense <b>${d}</b> (our cash not touched)`;
@@ -164,7 +164,7 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
     return k === 'out' ? `We <b>GIVE</b> ${a} to <b>${d}</b> from ${via}` : `We <b>GET</b> ${a} from <b>${d}</b> into ${via}`;
   }
 
-  /* currency switch: unsaved rows of the old currency are saved, kept as a draft, or the switch is cancelled */
+  /* currency switch: unsaved rows of the old currency are saved, kept as a draft, cleared, or the switch is cancelled */
   drafts: Record<string, VLine[]> = {};
   draftCount(c: string) { return (this.drafts[c] || []).filter(x => this.unsaved(x)).length; }
   async switchCur(c: string) {
@@ -173,10 +173,16 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
     if (n) {
       const k = await this.ui.choose('Save ' + from + ' entries first?',
         'You have <b>' + n + ' unsaved ' + from + ' row' + (n > 1 ? 's' : '') + '</b>. Do you want to save them before switching to <b>' + c + '</b>?',
-        [{ k: 'save', label: '✓ Yes, save', cls: 'pr' }, { k: 'draft', label: 'Keep separate (draft)' }, { k: 'cancel', label: 'Cancel' }],
-        '“Keep separate” keeps these ' + from + ' rows as a draft. Click ' + from + ' again to continue them.');
+        [{ k: 'save', label: '✓ Yes, save', cls: 'pr' }, { k: 'draft', label: 'Keep separate (draft)' },
+          { k: 'clear', label: '🗑 Clear & open ' + c, cls: 'odanger' }, { k: 'cancel', label: 'Cancel' }],
+        '“Keep separate” keeps these ' + from + ' rows as a draft – click ' + from + ' again to continue them. “Clear” throws away what is not saved (saved lines stay as they are).');
       if (k === 'save') { if (!(await this.saveVoucher())) return; }
       else if (k === 'draft') this.drafts[from] = this.rows;
+      else if (k === 'clear') {                                   // throw away new rows; a saved line being changed goes back to what is saved
+        this.rows.forEach(x => { if (x.editing) this.cancelEdit(x); });
+        this.rows = this.rows.filter(x => !this.unsaved(x));
+        this.ui.toast('🗑 Unsaved ' + from + ' row' + (n > 1 ? 's' : '') + ' cleared');
+      }
       else return;
     }
     const lv = this.loadedVno;
@@ -243,7 +249,7 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
   /** A saved voucher line as a locked grid row (✏️ / 🗑 work on it). */
   fromJv(j: Jv): VLine {
     const r = this.E().jvRow(j), a = String(j.amt);
-    const mode: CbMode = r.bank ? 'bank' : (j.mode === 'hand' || j.dr === HAND_CASH || j.cr === HAND_CASH) ? 'hand' : 'cash';
+    const mode: CbMode = r.bank ? 'bank' : (j.mode === 'hand' || [HAND_CASH, HAND_CASH_OLD].includes(j.dr) || [HAND_CASH, HAND_CASH_OLD].includes(j.cr)) ? 'hand' : 'cash';
     // an older "To" line (Description's money given to another name) shows as From: that name gets it, From = Description – same booking
     const toLine = r.dir === 'in' && !!r.other;
     return { desc: toLine ? r.other : r.desc, mode, bank: r.bank || 'BANK',

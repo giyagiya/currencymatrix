@@ -11,7 +11,7 @@ import { m } from '../core/fmt';
   @if (auth.seeMoney() && v(); as x) {
     <div class="sumstrip">
       <div><span>Capital</span><b>{{ m(x.cap) }}</b></div>
-      <div><span>Cash in hand</span><b [class.neg]="x.cash < 0">{{ m(x.cash) }}</b></div>
+      <div [title]="x.cash < 0 ? 'Minus = more rupees paid out than came in. Enter your starting money: Cash Book → Add capital.' : ''"><span>Cash in hand</span><b [class.neg]="x.cash < 0">{{ m(x.cash) }}</b></div>
       <div><span>Bank</span><b [class.neg]="x.bank < 0">{{ m(x.bank) }}</b></div>
       <div class="hl"><span>Total profit</span><b [class.neg]="x.tp < 0">{{ m(x.tp) }}</b></div>
     </div>

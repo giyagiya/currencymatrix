@@ -103,7 +103,16 @@ INSERT INTO settings(key,value) VALUES
  ('valRate','{}')
 ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO accounts(name,type) VALUES ('CASH','cash'),('HAND CASH','cash'),('BANK','bank'),('EXPENSES','expense'),('CAPITAL','capital')
+-- "Hand cash" is now called "Hand loan": rename the account and every entry that uses it. Safe to run again.
+UPDATE jv SET dr = 'HAND LOAN' WHERE dr = 'HAND CASH';
+UPDATE jv SET cr = 'HAND LOAN' WHERE cr = 'HAND CASH';
+UPDATE jv SET descr = 'HAND LOAN' WHERE descr = 'HAND CASH';
+UPDATE bill_rows SET descr = 'HAND LOAN' WHERE descr = 'HAND CASH';
+UPDATE bill_rows SET stock = 'HAND LOAN' WHERE stock = 'HAND CASH';
+DELETE FROM accounts WHERE name = 'HAND CASH' AND EXISTS (SELECT 1 FROM accounts WHERE name = 'HAND LOAN');
+UPDATE accounts SET name = 'HAND LOAN' WHERE name = 'HAND CASH';
+
+INSERT INTO accounts(name,type) VALUES ('CASH','cash'),('HAND LOAN','cash'),('BANK','bank'),('EXPENSES','expense'),('CAPITAL','capital')
 ON CONFLICT (name) DO NOTHING;
 
 -- "Currency in whose hand": rupees of a bill line are always with the party; only the currency sits at the Stock place.

@@ -21,7 +21,7 @@
           <td class="desc"><input [(ngModel)]="x.desc" (ngModelChange)="descChanged(x)" list="dl-acc2" class="up" autocomplete="off" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"></td>
           <td class="ft"><input [(ngModel)]="x.from" (ngModelChange)="fromChanged(x)" list="dl-acc2" class="up" autocomplete="off" placeholder="—" (keydown.enter)="nextBox($event)" [disabled]="locked(x)"
             title="FROM: the person we TAKE the money from (e.g. MY SGD COMPANY). It is given to Description. Empty = our own Cash / Bank."></td>
-          <td><select [(ngModel)]="x.mode" (keydown.enter)="nextBox($event)" [disabled]="locked(x) || hasOther(x)"><option value="cash">Cash</option><option value="hand">Hand cash</option><option value="bank">Bank</option></select></td>
+          <td><select [(ngModel)]="x.mode" (keydown.enter)="nextBox($event)" [disabled]="locked(x) || hasOther(x)"><option value="cash">Cash</option><option value="hand">Hand loan</option><option value="bank">Bank</option></select></td>
           <td><select [(ngModel)]="x.bank" [disabled]="x.mode !== 'bank' || locked(x) || hasOther(x)"><option value="BANK">BANK</option>@for (b of S().banks; track b.name) { <option [value]="b.name">{{ b.name }}</option> }
             @if (x.bank && x.bank !== 'BANK' && !hasBank(x.bank)) { <option [value]="x.bank">{{ x.bank }}</option> }</select></td>
           <td class="n"><input class="vin" [(ngModel)]="x.inn" (ngModelChange)="amtChanged(x, 'inn')" inputmode="decimal" (keydown.enter)="nextBox($event)" [disabled]="locked(x) || flow(x) === 'from'"></td>
@@ -160,7 +160,7 @@
       <div><label>Date</label><input type="date" [(ngModel)]="cap.date"></div>
       <div><label>Currency</label><select [(ngModel)]="cap.cur">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></div>
       <div><label>Amount</label><input id="cap-amt" [(ngModel)]="cap.amt" inputmode="decimal" placeholder="0.00" (keydown.enter)="saveCap()"></div>
-      <div><label>{{ cap.dir === 'in' ? 'Put into' : 'Taken from' }}</label><select [(ngModel)]="cap.mode"><option value="cash">💵 Cash</option><option value="hand">👛 Hand cash</option><option value="bank">🏦 Bank</option></select></div>
+      <div><label>{{ cap.dir === 'in' ? 'Put into' : 'Taken from' }}</label><select [(ngModel)]="cap.mode"><option value="cash">💵 Cash</option><option value="hand">👛 Hand loan</option><option value="bank">🏦 Bank</option></select></div>
       @if (cap.mode === 'bank') { <div><label>Bank</label><select [(ngModel)]="cap.bank"><option value="BANK">BANK</option>@for (b of S().banks; track b.name) { <option [value]="b.name">{{ b.name }}</option> }</select></div> }
       <div><label>Remarks</label><input [(ngModel)]="cap.note" placeholder="optional"></div>
     </div>

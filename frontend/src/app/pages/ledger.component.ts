@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { StoreService } from '../core/store.service';
 import { TYPES } from '../core/models';
+import { LedgerBlock } from '../core/engine';
 import { m, dmy, drcr, U } from '../core/fmt';
 
 @Component({
@@ -24,6 +25,12 @@ import { m, dmy, drcr, U } from '../core/fmt';
       }</div></div>
   } @else {
     @for (b of E().ledger(acct, from, to); track b.cur) {
+      @if (isSettled(b) && openFor !== U(acct) + '|' + b.cur) {
+        <!-- a person's rupees fully paid / received: one short line instead of the whole table -->
+        <div class="card settledln"><b>{{ U(acct) }} – {{ b.cur }}</b><span class="chip done">✓ Fully settled</span>
+          <span class="sub">₹{{ m(b.td > b.tc ? b.td : b.tc) }} – nothing to pay or receive</span><span class="flex"></span>
+          <button class="sm" (click)="openFor = U(acct) + '|' + b.cur">Show details</button></div>
+      } @else {
       <div class="card pad0"><div class="gridwrap"><table class="s">
         <tr class="cur"><td colspan="6">{{ U(acct) }} – {{ b.cur }}</td></tr>
         <tr><th class="l">Date</th><th class="l">Ref</th><th class="l">Particulars</th><th>Debit</th><th>Credit</th><th>Balance</th></tr>
@@ -34,6 +41,7 @@ import { m, dmy, drcr, U } from '../core/fmt';
         }
         <tr class="tot"><td></td><td></td><td class="l">Total</td><td class="n">{{ m(b.td) }}</td><td class="n">{{ m(b.tc) }}</td><td class="n">{{ drcr(b.close) }}</td></tr>
       </table></div></div>
+      }
     } @empty { <div class="empty">No transactions for {{ U(acct) }}.</div> }
     <button (click)="acct = ''">◀ All accounts</button>
   }
@@ -45,6 +53,13 @@ export class LedgerComponent {
   m = m; dmy = dmy; drcr = drcr; U = U; TYPES = TYPES as Record<string, string>;
   E = computed(() => this.store.engine()!);
   acct = ''; from = ''; to = '';
+  /** "NAME|CUR" of a settled section opened with Show details (another name closes it again) */
+  openFor = '';
+  /** A person's (party / dealer / stock) rupee section with nothing left to pay or receive – shown as one short line. */
+  isSettled(b: LedgerBlock) {
+    const E = this.E();
+    return b.cur === E.S.base && b.lines.length > 0 && Math.abs(b.close) < 0.005 && ['party', 'dealer', 'stock'].includes(E.accType(U(this.acct)));
+  }
   constructor() {   // opened from the Balance sheet: /ledger?acct=NAME&to=DATE
     const q = inject(ActivatedRoute).snapshot.queryParamMap;
     this.acct = q.get('acct') || ''; this.to = q.get('to') || '';

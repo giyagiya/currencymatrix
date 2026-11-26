@@ -18,9 +18,9 @@ import { m, num, today } from '../core/fmt';
       <div><label>Name</label><select [(ngModel)]="f.acct"><option value="">All names</option>@for (a of E().allAccounts(); track a) { <option [value]="a">{{ a }}</option> }</select></div>
       <div><label>Type</label><select [(ngModel)]="f.typ"><option value="all">All types</option><option value="party">Party</option><option value="dealer">Delivery dealer</option>
         <option value="stock">Stock / wallet</option><option value="cb">Cash &amp; Bank</option><option value="expense">Expense</option><option value="capital">Capital</option></select></div>
-      <div><label>Currency</label><select [(ngModel)]="f.cur"><option value="all">All currencies</option>@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></div>
+      <div><label>Currency</label><select [ngModel]="curNow()" (ngModelChange)="setCur($event)"><option value="all">All currencies</option>@for (c of shownCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></div>
     </div>
-    <div class="hint">Totals below are worked out only for the names shown.{{ canLedger() ? ' Tap a name to open its ledger.' : '' }}</div>
+    <div class="hint">Shows the currencies you buy and sell{{ baseTraded() ? '' : ' (' + base() + ' shows only when a bill buys or sells ' + base() + ')' }}. Totals are worked out only for the names shown.{{ canLedger() ? ' Tap a name to open its ledger.' : '' }}</div>
   </div>
 
   @if (blocks(); as blocks) {
@@ -105,9 +105,22 @@ export class BalanceComponent {
   store = inject(StoreService); auth = inject(AuthService); ui = inject(UiService); router = inject(Router);
   m = m; TYPES = TYPES as Record<string, string>;
   E = computed(() => this.store.engine()!);
-  f = { to: '', acct: '', typ: 'all', cur: 'all' };
+  /** cur: 'all' or one currency – the choice is remembered on this device */
+  f = { to: '', acct: '', typ: 'all', cur: (() => { try { return localStorage.getItem('remit.bsCur') || 'all'; } catch { return 'all'; } })() };
+  setCur(c: string) { this.f.cur = c; try { localStorage.setItem('remit.bsCur', c); } catch {} }
   tp = computed(() => this.E().totalProfit());
-  blocks(): SheetBlock[] { return this.E().sheetData(this.f); }
+  /** Rupees (the base currency) are shown only when a bill buys or sells rupees themselves (e.g. INR priced in USDT) –
+   *  not for the rupees paid / received for SGD, USDT… */
+  baseTraded() { const base = this.base(); return this.E().S.bills.some(b => b.rows.some(r => r.cur === base)); }
+  shownCurs() { return this.E().allCurs().filter(c => c !== this.base() || this.baseTraded()); }
+  /** the picked currency, or 'all' when that currency is not shown (e.g. an old INR choice) */
+  curNow() { return this.shownCurs().includes(this.f.cur) ? this.f.cur : 'all'; }
+  blocks(): SheetBlock[] {
+    const show = new Set(this.shownCurs());
+    return this.E().sheetData({ ...this.f, cur: this.curNow() }).filter(b => show.has(b.cur));
+  }
+  /** the rupee block (same date / name / type filters) – for the Convert box */
+  baseBlock(): SheetBlock | undefined { return this.E().sheetData({ ...this.f, cur: this.base() })[0]; }
   canLedger() { return this.auth.canPage('ledger'); }
   openLedger(a: string) { this.router.navigate(['/ledger'], { queryParams: { acct: a, ...(this.f.to ? { to: this.f.to } : {}) } }); }
 
@@ -133,7 +146,7 @@ export class BalanceComponent {
   cvRate: string | null = null;  // null = latest purchase rate
   base() { return this.E().S.base; }
   foreign() { return this.E().allCurs().filter(c => c !== this.base()); }
-  baseNet() { return this.blocks().find(b => b.cur === this.base())?.net || 0; }
+  baseNet() { return this.baseBlock()?.net || 0; }
   cvCurNow() { const f = this.foreign(); return f.includes(this.cvCur) ? this.cvCur : f.includes('USDT') ? 'USDT' : f[0]; }
   cvLast() { return this.E().lastPRate(this.cvCurNow()); }
   cvIn() { return this.cvAmt === null ? this.baseNet() : num(this.cvAmt); }

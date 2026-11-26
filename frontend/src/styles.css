@@ -261,3 +261,8 @@ table.ulist select{min-width:132px}
   .bh-f{width:calc(50% - 6px)}.bh-f.grow{min-width:100%}
   .card{padding:10px 11px;margin:8px 0}
 }
+/* Ledger: a person's rupees fully settled – one short line */
+.settledln{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:12px 16px}
+/* outlined red button (e.g. "Clear & open SGD" in the Cash Book currency switch) */
+button.odanger{background:#fff;color:var(--red);border-color:#fecdca}
+button.odanger:hover{background:#fef3f2}

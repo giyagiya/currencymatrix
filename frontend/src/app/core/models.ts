@@ -42,10 +42,12 @@ export const TYPES: Record<AccType, string> = {
 };
 export const PMODES: Record<string, string> = { bank: 'Bank', shop: 'Shop cash', home: 'Home delivery' };
 export const MIC: Record<string, string> = { bank: '🏦', shop: '🏪', home: '🏠' };
-export const VM: Record<string, string> = { cash: 'Cash', hand: 'Hand cash', bank: 'Bank', shop: 'Shop cash', home: 'Home delivery' };
-/** Cash Book modes: Cash → CASH, Hand cash → HAND CASH (its own cash account), Bank → the chosen bank. */
+export const VM: Record<string, string> = { cash: 'Cash', hand: 'Hand loan', bank: 'Bank', shop: 'Shop cash', home: 'Home delivery' };
+/** Cash Book modes: Cash → CASH, Hand loan → HAND LOAN (its own cash account; was called Hand cash / HAND CASH), Bank → the chosen bank. */
 export type CbMode = 'cash' | 'hand' | 'bank';
-export const HAND_CASH = 'HAND CASH';
+export const HAND_CASH = 'HAND LOAN';
+/** the old name of that account (entries saved before the rename) */
+export const HAND_CASH_OLD = 'HAND CASH';
 export const JTYPES: Record<string, string> = {
   receipt: 'Receipt', payment: 'Payment', transfer: 'Transfer', expense: 'Expense',
   journal: 'Journal', capital: 'Capital', out: 'OUT', in: 'IN',
