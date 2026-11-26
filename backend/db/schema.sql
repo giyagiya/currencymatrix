@@ -48,8 +48,8 @@ CREATE TABLE IF NOT EXISTS bill_rows (
   cur     TEXT NOT NULL,              -- foreign currency (SGD…)
   base    TEXT NOT NULL,              -- currency of the price (INR)
   qty     NUMERIC(20,4) NOT NULL,
-  prate   NUMERIC(20,8) NOT NULL DEFAULT 0,  -- purchase rate (0 when sale)
-  srate   NUMERIC(20,8) NOT NULL DEFAULT 0,  -- sale rate (0 when purchase)
+  prate   NUMERIC(24,12) NOT NULL DEFAULT 0,  -- purchase rate (0 when sale)
+  srate   NUMERIC(24,12) NOT NULL DEFAULT 0,  -- sale rate (0 when purchase)
   stock   TEXT NOT NULL DEFAULT '',
   mode    TEXT NOT NULL DEFAULT 'bank' CHECK (mode IN ('bank','shop','home')),
   bank    TEXT NOT NULL DEFAULT '',
@@ -96,12 +96,16 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 INSERT INTO settings(key,value) VALUES
  ('base','"INR"'),
- ('currencies','["SGD","MYR","AED","USD","USDT"]'),
+ ('currencies','["SGD","USDT","USD","SR","MYR","AED"]'),
  ('stockOf','{}'),
  ('payComm','{"bank":0,"shop":0,"home":0}'),
  ('lastMode','"bank"'),
  ('valRate','{}')
 ON CONFLICT (key) DO NOTHING;
+
+-- Rates keep 12 decimals (was 8) so "1 SGD = 83 INR" (0.012048192771 per INR) stays exact to the cent on big amounts. Safe to run again.
+ALTER TABLE bill_rows ALTER COLUMN prate TYPE NUMERIC(24,12);
+ALTER TABLE bill_rows ALTER COLUMN srate TYPE NUMERIC(24,12);
 
 -- "Hand cash" is now called "Hand loan": rename the account and every entry that uses it. Safe to run again.
 UPDATE jv SET dr = 'HAND LOAN' WHERE dr = 'HAND CASH';

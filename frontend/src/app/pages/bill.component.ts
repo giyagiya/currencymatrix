@@ -47,7 +47,7 @@ export class BillComponent implements AfterViewInit {
   /** A new row copies type, currency, price-in, pay-by, bank and dealer from the row above. Stock always starts empty – pick one only when needed. */
   newLine(p?: Line): Line {
     const S = this.store.book()!;
-    const c = p?.cur || S.currencies[0] || 'USD';
+    const c = p?.cur || this.E().allCurs().find(x => x !== S.base) || 'USD';   // first currency in the fixed order (SGD)
     return { desc: '', phone: '', side: p?.side || 'p', cur: c, base: p?.base || S.base, qty: '', rate: '', inv: '', stock: '',
       mode: p?.mode || S.lastMode || 'bank', bank: p?.bank || 'BANK', dealer: p?.dealer || '', comm: '' };
   }
@@ -68,7 +68,8 @@ export class BillComponent implements AfterViewInit {
   trail() { const last = this.rows[this.rows.length - 1]; if (this.filled(last)) this.rows.push(this.newLine(last)); }
   removeRow(i: number) { this.rows.splice(i, 1); if (!this.rows.length || this.filled(this.rows[this.rows.length - 1])) this.rows.push(this.newLine(this.rows[this.rows.length - 1])); }
   invCur(c: string) { return this.E().invCur(c); }
-  invChanged(l: Line) { const v = num(l.inv); l.rate = v ? String(+(1 / v).toFixed(10)) : ''; }
+  /** "1 SGD = 83 INR" typed for a line priced in SGD → rate per INR kept to 12 decimals (1 crore INR → SGD 1,20,481.93, exact to the cent) */
+  invChanged(l: Line) { const v = num(l.inv); l.rate = v ? String(+(1 / v).toFixed(12)) : ''; }
   lineAmt(l: Line) { return num(l.qty) * num(l.rate); }
   lineComm(l: Line) { return r2(this.lineAmt(l) * num(l.comm) / 100000); }
   lastRate(l: Line) { return this.E().lastRate(l.cur, l.base); }

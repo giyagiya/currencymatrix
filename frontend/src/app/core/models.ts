@@ -46,6 +46,8 @@ export const VM: Record<string, string> = { cash: 'Cash', hand: 'Hand loan', ban
 /** Cash Book modes: Cash → CASH, Hand loan → HAND LOAN (its own cash account; was called Hand cash / HAND CASH), Bank → the chosen bank. */
 export type CbMode = 'cash' | 'hand' | 'bank';
 export const HAND_CASH = 'HAND LOAN';
+/** Currencies always show in this order (tabs, lists, Balance sheet, Setup); any other currency comes after, in the order it was added. */
+export const CUR_ORDER = ['INR', 'SGD', 'USDT', 'USD', 'SR', 'MYR', 'AED'];
 /** the old name of that account (entries saved before the rename) */
 export const HAND_CASH_OLD = 'HAND CASH';
 export const JTYPES: Record<string, string> = {

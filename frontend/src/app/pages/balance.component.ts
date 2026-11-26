@@ -109,15 +109,15 @@ export class BalanceComponent {
   f = { to: '', acct: '', typ: 'all', cur: (() => { try { return localStorage.getItem('remit.bsCur') || 'all'; } catch { return 'all'; } })() };
   setCur(c: string) { this.f.cur = c; try { localStorage.setItem('remit.bsCur', c); } catch {} }
   tp = computed(() => this.E().totalProfit());
-  /** Rupees (the base currency) are shown only when a bill buys or sells rupees themselves (e.g. INR priced in USDT) –
-   *  not for the rupees paid / received for SGD, USDT… */
+  /** Rupees (the base currency) are shown only when a bill buys or sells rupees themselves (e.g. INR priced in SGD) – and then
+   *  only that traded INR (who holds it), never the rupees paid / received for SGD, USDT… */
   baseTraded() { const base = this.base(); return this.E().S.bills.some(b => b.rows.some(r => r.cur === base)); }
   shownCurs() { return this.E().allCurs().filter(c => c !== this.base() || this.baseTraded()); }
   /** the picked currency, or 'all' when that currency is not shown (e.g. an old INR choice) */
   curNow() { return this.shownCurs().includes(this.f.cur) ? this.f.cur : 'all'; }
   blocks(): SheetBlock[] {
     const show = new Set(this.shownCurs());
-    return this.E().sheetData({ ...this.f, cur: this.curNow() }).filter(b => show.has(b.cur));
+    return this.E().sheetData({ ...this.f, cur: this.curNow(), stockOnly: true }).filter(b => show.has(b.cur));
   }
   /** the rupee block (same date / name / type filters) – for the Convert box */
   baseBlock(): SheetBlock | undefined { return this.E().sheetData({ ...this.f, cur: this.base() })[0]; }

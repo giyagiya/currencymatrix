@@ -26,6 +26,8 @@ export class SetupComponent {
   dpin = '';
 
   /* currencies */
+  /** the trading currencies in the fixed order (INR · SGD · USDT · USD · SR · MYR · AED, then others) */
+  tradeCurs() { const S = this.S(); return this.E().allCurs().filter(c => S.currencies.includes(c)); }
   setBase(v: string) { this.store.save('put', '/settings', { base: v }, '✓ Base currency ' + v); }
   addCur() { const c = U(this.newCur); if (!c) return; if (this.S().currencies.includes(c)) { this.ui.toast(c + ' already added'); return; }
     this.store.save('put', '/settings', { currencies: [...this.S().currencies, c] }, '✓ ' + c + ' added').then(r => { if (r) this.newCur = ''; }); }
