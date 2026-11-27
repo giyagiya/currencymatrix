@@ -50,7 +50,7 @@ import { m, num, today, U } from '../core/fmt';
     } @else { <div class="empty">Nothing to show.</div> }
   }
 
-  @if (dues(); as d) {
+  @for (d of dues(); track d.cur) {
     <div class="card"><h2 class="sech">{{ d.title }} to receive / to pay</h2>
       <div class="dues">
         @for (side of [{ h: 'To receive', l: d.rec, t: d.tr, cls: 'pos' }, { h: 'To pay', l: d.pay, t: d.tp, cls: 'neg' }]; track side.h) {
@@ -63,7 +63,9 @@ import { m, num, today, U } from '../core/fmt';
           </table></div>
         }
       </div>
-      <div class="hint">Money still to come from, or to go to, each person – for bills and Cash Book lines. Receive / Pay it in Bills &amp; payments; the name drops off once it is settled.</div>
+      <div class="hint">{{ d.cur === base() ? 'Money still to come from, or to go to, each person – for bills and Cash Book lines.'
+        : d.cur + ' still to come from, or to go to, each person – for bill lines priced in ' + d.cur + ' (e.g. ' + base() + ' bought for ' + d.cur + '). The ' + d.cur + ' block above shows only who holds ' + d.cur + '.' }}
+        Receive / Pay it in Bills &amp; payments; the name drops off once it is settled.</div>
     </div>
   }
 
@@ -141,22 +143,26 @@ export class BalanceComponent {
   canLedger() { return this.auth.canPage('ledger'); }
   openLedger(a: string) { this.router.navigate(['/ledger'], { queryParams: { acct: a, ...(this.f.to ? { to: this.f.to } : {}) } }); }
 
-  /** Rupees still to receive / to pay, by person (parties and delivery dealers): what bills and Cash Book lines left open.
-   *  Cash, bank, stock companies, capital and expenses are not people, so they are left out. Follows the date, name and type
-   *  filters; hidden when one foreign currency is picked. */
+  /** Still to receive / to pay, by person (parties and delivery dealers), one box per currency: the price side of bill lines
+   *  and their Pay / Receive – e.g. SGD bought for rupees → rupees to pay; INR bought for SGD (SURA) → SGD to pay – plus Cash Book
+   *  rupee lines. It is exactly what the currency blocks above leave out, so block + box = the person's ledger balance.
+   *  Cash, bank, stock companies, capital and expenses are not people, so they are left out. Follows the date, name, type and
+   *  currency filters. */
   dues() {
-    const base = this.base(), cur = this.curNow(), typ = this.f.typ;
-    if ((cur !== 'all' && cur !== base) || !['all', 'party', 'dealer'].includes(typ)) return null;
-    const E = this.E(), A = E.balances(this.f.to || undefined)[base] || {}, q = U(this.f.acct);
-    const who = Object.keys(A).filter(a => {
-      const t = E.accType(a);
-      return (t === 'party' || t === 'dealer') && (typ === 'all' || t === typ) && (!q || a === q) && Math.abs(A[a]) >= 0.005;
-    });
-    const list = (sign: number) => who.filter(a => A[a] * sign > 0).map(a => ({ a, v: Math.abs(A[a]) })).sort((x, y) => y.v - x.v || x.a.localeCompare(y.a));
-    const rec = list(1), pay = list(-1);
-    if (!rec.length && !pay.length) return null;
-    return { rec, pay, tr: rec.reduce((s, x) => s + x.v, 0), tp: pay.reduce((s, x) => s + x.v, 0),
-      sym: base === 'INR' ? '₹' : base, title: base === 'INR' ? '₹ Rupees' : base };
+    const base = this.base(), pick = this.curNow(), typ = this.f.typ;
+    if (!['all', 'party', 'dealer'].includes(typ)) return [];
+    const E = this.E(), to = this.f.to || undefined, B = E.balances(to), q = U(this.f.acct);
+    return E.curOrder(B).filter(c => B[c] && (pick === 'all' || c === pick)).map(c => {
+      const A = B[c], held = c === base ? E.baseStockBalances(to) : E.curStockBalances(c, to), due: { a: string; v: number }[] = [];
+      Object.keys(A).forEach(a => {
+        const t = E.accType(a), v = A[a] - (held[a] || 0);
+        if ((t === 'party' || t === 'dealer') && (typ === 'all' || t === typ) && (!q || a === q) && Math.abs(v) >= 0.005) due.push({ a, v });
+      });
+      const list = (sign: number) => due.filter(x => x.v * sign > 0).map(x => ({ a: x.a, v: Math.abs(x.v) })).sort((x, y) => y.v - x.v || x.a.localeCompare(y.a));
+      const rec = list(1), pay = list(-1);
+      return { cur: c, rec, pay, tr: rec.reduce((s, x) => s + x.v, 0), tp: pay.reduce((s, x) => s + x.v, 0),
+        sym: c === 'INR' ? '₹' : c, title: c === 'INR' ? '₹ Rupees' : c };
+    }).filter(d => d.rec.length || d.pay.length);
   }
 
   /** expenses per head (and a total per currency) */
@@ -200,12 +206,12 @@ export class BalanceComponent {
         .forEach(([l, v]) => out.push([b.cur, l, '', n(v), '']));
       out.push([]);
     });
-    const d = this.dues();   // rupees to receive / to pay by person
-    if (d) {
-      d.rec.forEach(x => out.push([this.base(), x.a, 'To receive', n(x.v), '']));
-      d.pay.forEach(x => out.push([this.base(), x.a, 'To pay', '', n(x.v)]));
-      out.push([this.base(), 'TOTAL TO RECEIVE / TO PAY', '', n(d.tr), n(d.tp)]);
-    }
+    this.dues().forEach(d => {   // to receive / to pay by person, per currency
+      d.rec.forEach(x => out.push([d.cur, x.a, 'To receive', n(x.v), '']));
+      d.pay.forEach(x => out.push([d.cur, x.a, 'To pay', '', n(x.v)]));
+      out.push([d.cur, 'TOTAL TO RECEIVE / TO PAY', '', n(d.tr), n(d.tp)]);
+      out.push([]);
+    });
     return out.map(r => r.map(q).join(',')).join('\r\n');
   }
   downloadCsv() {

@@ -174,12 +174,14 @@ export class Engine {
     };
     const ev: { d: string; pr: number; run: () => void }[] = [];
     this.S.bills.forEach(b => { if (!to || b.date <= to) b.rows.forEach(r => {
-      const rb = r.base || base, qty = num(r.qty), buy = this.rowSide(r) === 'p', rate = this.rowRate(r);
-      if (!qty || !(rate > 0) || r.cur === rb) return;
-      if (rb === base) ev.push({ d: b.date, pr: buy ? 0 : 2, run: () => step(r.cur, buy ? qty : -qty, rate) });
-      else if (r.cur === base) { const amt = qty * rate; ev.push({ d: b.date, pr: buy ? 2 : 0, run: () => step(rb, buy ? -amt : amt, qty / amt) }); }
+      // amt = the line's Amount as booked (rounded to 2 decimals), so the cost matches what was really paid / received:
+      // INR 10,00,000 @ 0.035714285714 SR = SR 35,714.29 → each SR cost 10,00,000 / 35,714.29 (not 28.0000…, which left ₹0.12 of "loss")
+      const rb = r.base || base, qty = num(r.qty), buy = this.rowSide(r) === 'p', amt = this.rowAmt(r);
+      if (!qty || !(amt > 0) || r.cur === rb) return;
+      if (rb === base) ev.push({ d: b.date, pr: buy ? 0 : 2, run: () => step(r.cur, buy ? qty : -qty, amt / qty) });
+      else if (r.cur === base) ev.push({ d: b.date, pr: buy ? 2 : 0, run: () => step(rb, buy ? -amt : amt, qty / amt) });
       else ev.push({ d: b.date, pr: 1, run: () => {
-        const amt = qty * rate, ref = g(rb).a || num(vr[rb]) || 0;
+        const ref = g(rb).a || num(vr[rb]) || 0;
         const worth = ref > 0 ? amt * ref : (g(r.cur).a || num(vr[r.cur]) || 0) * qty;   // the deal in rupees
         if (!(worth > 0)) return;   // neither currency has a rupee cost yet – cannot be valued
         step(r.cur, buy ? qty : -qty, worth / qty);
@@ -369,8 +371,9 @@ export class Engine {
     const S = this.S, days: Record<string, DayRow> = {}, P = U(f.party);
     const g = (d: string) => days[d] = days[d] || { d, bills: {}, pur: 0, sale: 0, paid: 0, recv: 0, comm: 0, exp: 0, profit: null, diff: 0 };
     S.bills.forEach(b => b.rows.forEach(r => {
-      if ((r.base || S.base) !== S.base) return; if (P && this.rowAcct(r) !== P) return;
-      const x = g(b.date); x.bills[b.no] = 1;
+      if (!r.desc || !num(r.qty) || (P && this.rowAcct(r) !== P)) return;
+      const x = g(b.date); x.bills[b.no] = 1;   // every bill of the day is listed …
+      if ((r.base || S.base) !== S.base) return;   // … but only rupee prices go into Purchase / Sale
       if (num(r.prate) > 0) x.pur += r2(num(r.qty) * num(r.prate));
       if (num(r.srate) > 0) x.sale += r2(num(r.qty) * num(r.srate));
     }));
@@ -402,9 +405,13 @@ export class Engine {
     S.bills.forEach(b => {
       if (b.date !== d) return;
       b.rows.forEach(r => {
-        if ((r.base || S.base) !== S.base) return; if (Pf && this.rowAcct(r) !== Pf) return;
+        if (!r.desc || !num(r.qty) || (Pf && this.rowAcct(r) !== Pf)) return;
         const x = g(this.rowAcct(r)), a = r2(num(r.qty) * this.rowRate(r));
         const who = r.stock && r.stock !== r.desc ? (num(r.prate) > 0 ? ' · kept at ' : ' · from ') + r.stock : '';
+        const rb = r.base || S.base;
+        if (rb !== S.base) {   // priced in another currency (e.g. INR bought for SR): described, but no rupees in Purchase / Sale
+          (num(r.prate) > 0 ? x.pq : x.sq).push(r.cur + ' ' + m(num(r.qty)) + ' for ' + rb + ' ' + m(a) + who); return;
+        }
         if (num(r.prate) > 0) { x.pur += a; x.pq.push(r.cur + ' ' + m(num(r.qty)) + ' ' + this.rateShort(r.cur, num(r.prate)) + who); }
         else { x.sale += a; x.sq.push(r.cur + ' ' + m(num(r.qty)) + ' ' + this.rateShort(r.cur, num(r.srate)) + who); }
       });
