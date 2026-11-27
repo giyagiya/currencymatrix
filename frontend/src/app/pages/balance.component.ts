@@ -112,9 +112,9 @@ import { m, num, today, U } from '../core/fmt';
         <div><label>Rate</label><input [ngModel]="cvRate ?? (cvLast() || '')" (ngModelChange)="cvRate = $event" inputmode="decimal"></div>
       </div>
       <div class="gridwrap"><table class="s grid cv">
-        <tr><td class="l">{{ base() }} {{ m(cvIn()) }} / {{ cvR() || 0 }}</td><td class="n"><b>{{ cvR() ? m(cvIn() / cvR()) : '—' }} {{ cvCurNow() }}</b></td></tr>
+        <tr><td class="l">{{ base() }} {{ m(cvIn()) }}{{ cvR() ? ' / ' + cvR() : '' }}</td><td class="n"><b>{{ cvR() ? m(cvIn() / cvR()) + ' ' + cvCurNow() : 'Type a rate' }}</b></td></tr>
       </table></div>
-      <div class="hint">Rate starts at your latest purchase rate for {{ cvCurNow() }}. You can change it.</div>
+      <div class="hint">{{ cvLast() ? 'Rate starts at your latest purchase rate for ' + cvCurNow() + ' (or what it cost on average). You can change it.' : 'No rate yet for ' + cvCurNow() + ' – type one in the Rate box.' }}</div>
     </div>
   }
 
@@ -200,8 +200,15 @@ export class BalanceComponent {
   base() { return this.E().S.base; }
   foreign() { return this.E().allCurs().filter(c => c !== this.base()); }
   baseNet() { return this.baseBlock()?.net || 0; }
-  cvCurNow() { const f = this.foreign(); return f.includes(this.cvCur) ? this.cvCur : f.includes('USDT') ? 'USDT' : f[0]; }
-  cvLast() { return this.E().lastPRate(this.cvCurNow()); }
+  /** a currency's rupee rate for the Convert box: its latest purchase rate, else what it cost on average (opening stock, deals) */
+  cvRateOf(c: string) { const E = this.E(); return E.lastPRate(c) || E.costRate(c) || 0; }
+  /** the picked currency, else USDT or the first currency that has a rate (never one that would divide by 0) */
+  cvCurNow() {
+    const f = this.foreign(); if (f.includes(this.cvCur)) return this.cvCur;
+    const rated = f.filter(c => this.cvRateOf(c) > 0);
+    return rated.includes('USDT') ? 'USDT' : rated[0] || (f.includes('USDT') ? 'USDT' : f[0]);
+  }
+  cvLast() { return this.cvRateOf(this.cvCurNow()); }
   cvIn() { return this.cvAmt === null ? this.baseNet() : num(this.cvAmt); }
   cvR() { return this.cvRate === null ? this.cvLast() : num(this.cvRate); }
 
