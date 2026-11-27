@@ -6,7 +6,7 @@ import { AuthService } from '../core/auth.service';
 import { UiService } from '../shared/ui.service';
 import { TYPES } from '../core/models';
 import { SheetBlock } from '../core/engine';
-import { m, num, today } from '../core/fmt';
+import { m, num, today, U } from '../core/fmt';
 
 @Component({
   standalone: true,
@@ -48,6 +48,23 @@ import { m, num, today } from '../core/fmt';
         }
       </table></div></div>
     } @else { <div class="empty">Nothing to show.</div> }
+  }
+
+  @if (dues(); as d) {
+    <div class="card"><h2 class="sech">{{ d.title }} to receive / to pay</h2>
+      <div class="dues">
+        @for (side of [{ h: 'To receive', l: d.rec, t: d.tr, cls: 'pos' }, { h: 'To pay', l: d.pay, t: d.tp, cls: 'neg' }]; track side.h) {
+          <div class="gridwrap"><table class="s grid">
+            <tr><th class="l">{{ side.h }}</th><th>{{ d.sym }}</th></tr>
+            @for (x of side.l; track x.a) {
+              <tr><td class="l">@if (canLedger()) { <a class="acc" (click)="openLedger(x.a)">{{ x.a }}</a> } @else { {{ x.a }} }</td><td class="n" [class.pos]="side.cls === 'pos'" [class.neg]="side.cls === 'neg'">{{ m(x.v) }}</td></tr>
+            } @empty { <tr><td class="l sub" colspan="2">Nothing</td></tr> }
+            <tr class="bs-tot"><td class="l">Total</td><td class="n">{{ m(side.t) }}</td></tr>
+          </table></div>
+        }
+      </div>
+      <div class="hint">Money still to come from, or to go to, each person – for bills and Cash Book lines. Receive / Pay it in Bills &amp; payments; the name drops off once it is settled.</div>
+    </div>
   }
 
   @if (exp().rows.length) {
@@ -124,6 +141,24 @@ export class BalanceComponent {
   canLedger() { return this.auth.canPage('ledger'); }
   openLedger(a: string) { this.router.navigate(['/ledger'], { queryParams: { acct: a, ...(this.f.to ? { to: this.f.to } : {}) } }); }
 
+  /** Rupees still to receive / to pay, by person (parties and delivery dealers): what bills and Cash Book lines left open.
+   *  Cash, bank, stock companies, capital and expenses are not people, so they are left out. Follows the date, name and type
+   *  filters; hidden when one foreign currency is picked. */
+  dues() {
+    const base = this.base(), cur = this.curNow(), typ = this.f.typ;
+    if ((cur !== 'all' && cur !== base) || !['all', 'party', 'dealer'].includes(typ)) return null;
+    const E = this.E(), A = E.balances(this.f.to || undefined)[base] || {}, q = U(this.f.acct);
+    const who = Object.keys(A).filter(a => {
+      const t = E.accType(a);
+      return (t === 'party' || t === 'dealer') && (typ === 'all' || t === typ) && (!q || a === q) && Math.abs(A[a]) >= 0.005;
+    });
+    const list = (sign: number) => who.filter(a => A[a] * sign > 0).map(a => ({ a, v: Math.abs(A[a]) })).sort((x, y) => y.v - x.v || x.a.localeCompare(y.a));
+    const rec = list(1), pay = list(-1);
+    if (!rec.length && !pay.length) return null;
+    return { rec, pay, tr: rec.reduce((s, x) => s + x.v, 0), tp: pay.reduce((s, x) => s + x.v, 0),
+      sym: base === 'INR' ? '₹' : base, title: base === 'INR' ? '₹ Rupees' : base };
+  }
+
   /** expenses per head (and a total per currency) */
   exp = computed(() => {
     const E = this.E(), B = E.balances(), rows: { a: string; c: string; v: number }[] = [], tots: { c: string; v: number }[] = [];
@@ -165,6 +200,12 @@ export class BalanceComponent {
         .forEach(([l, v]) => out.push([b.cur, l, '', n(v), '']));
       out.push([]);
     });
+    const d = this.dues();   // rupees to receive / to pay by person
+    if (d) {
+      d.rec.forEach(x => out.push([this.base(), x.a, 'To receive', n(x.v), '']));
+      d.pay.forEach(x => out.push([this.base(), x.a, 'To pay', '', n(x.v)]));
+      out.push([this.base(), 'TOTAL TO RECEIVE / TO PAY', '', n(d.tr), n(d.tp)]);
+    }
     return out.map(r => r.map(q).join(',')).join('\r\n');
   }
   downloadCsv() {

@@ -158,12 +158,20 @@
     <div class="seg"><button [class.on]="cap.dir === 'in'" (click)="cap.dir = 'in'">＋ Add capital</button><button [class.on]="cap.dir === 'out'" (click)="cap.dir = 'out'">－ Take out capital</button></div>
     <div class="grid2">
       <div><label>Date</label><input type="date" [(ngModel)]="cap.date"></div>
-      <div><label>Currency</label><select [(ngModel)]="cap.cur">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></div>
+      <div><label>Currency</label><select [(ngModel)]="cap.cur" (ngModelChange)="capCurChanged($event)">@for (c of E().allCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></div>
       <div><label>Amount</label><input id="cap-amt" [(ngModel)]="cap.amt" inputmode="decimal" placeholder="0.00" (keydown.enter)="saveCap()"></div>
-      <div><label>{{ cap.dir === 'in' ? 'Put into' : 'Taken from' }}</label><select [(ngModel)]="cap.mode"><option value="cash">💵 Cash</option><option value="hand">👛 Hand loan</option><option value="bank">🏦 Bank</option></select></div>
+      <div><label>{{ cap.dir === 'in' ? 'Put into' : 'Taken from' }}</label><select [(ngModel)]="cap.mode"><option value="cash">💵 Cash</option><option value="hand">👛 Hand loan</option><option value="bank">🏦 Bank</option>
+        @if (cap.cur !== S().base && stockPlace(cap.cur)) { <option value="stock">🏢 {{ stockPlace(cap.cur) }} (stock)</option> }</select></div>
+      @if (cap.dir === 'in' && cap.cur !== S().base) {
+        <div><label>Cost rate <small class="sub">{{ S().base }} per 1 {{ cap.cur }}</small></label>
+          <input [(ngModel)]="cap.rate" inputmode="decimal" [placeholder]="capRateHint(cap.cur) ? 'e.g. ' + capRateHint(cap.cur) : 'what 1 ' + cap.cur + ' cost you'" (keydown.enter)="saveCap()"></div>
+      }
       @if (cap.mode === 'bank') { <div><label>Bank</label><select [(ngModel)]="cap.bank"><option value="BANK">BANK</option>@for (b of S().banks; track b.name) { <option [value]="b.name">{{ b.name }}</option> }</select></div> }
       <div><label>Remarks</label><input [(ngModel)]="cap.note" placeholder="optional"></div>
     </div>
+    @if (cap.dir === 'in' && cap.cur !== S().base) {
+      <div class="hint">Opening stock: {{ cap.cur }} you already hold. The cost rate is what it cost you – profit on it is counted when you sell it.</div>
+    }
     <div class="acts"><button class="pr" (click)="saveCap()" [disabled]="store.busy()">💾 Save capital</button><button (click)="cap = null">Cancel</button></div>
   </div></div>
 }

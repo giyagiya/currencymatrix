@@ -3,8 +3,10 @@
  * Everything (balances, balance sheet, profit, daily summary, ledger) is worked out from the Book.
  */
 import { Book, Bill, BillRow, Jv, Posting, AccType, JTYPES, VM, CUR_ORDER } from './models';
-import { r2, num, U, m } from './fmt';
+import { r2, num, U, m, dmy } from './fmt';
 
+/** names the app makes itself – what kind of account each one is */
+const BUILT_IN: Record<string, AccType> = { CASH: 'cash', 'HAND LOAN': 'cash', 'HAND CASH': 'cash', BANK: 'bank', CAPITAL: 'capital', EXPENSES: 'expense' };
 /** stockOnly: each currency block shows only who holds that currency – the price side of deals is left out
  *  (INR: baseStockBalances, others: curStockBalances) */
 export interface SheetFilter { to?: string; acct?: string; typ?: string; cur?: string; stockOnly?: boolean; }
@@ -25,7 +27,8 @@ export class Engine {
 
   /** A name kept in Setup → Stock for each currency is a stock / wallet company even if it was saved as a party. */
   accType(n: string): AccType {
-    const t = this.S.accounts[n]?.type || 'party';
+    // the built-in names keep their kind even if they are missing from the names list (e.g. after Setup → clear all)
+    const t = this.S.accounts[n]?.type || BUILT_IN[n] || 'party';
     if (t === 'party' && n && Object.values(this.S.stockOf || {}).some(v => U(v) === n)) return 'stock';
     return t;
   }
@@ -183,6 +186,14 @@ export class Engine {
         step(rb, buy ? -amt : amt, worth / amt);
       } });
     }); });
+    // opening stock: capital put in as a foreign currency with its cost rate (SGD 50,000 @ 80) counts like a purchase;
+    // capital taken out in a foreign currency leaves at the average cost
+    this.S.jv.forEach(j => {
+      if (j.cur === base || (to && j.date > to) || !(num(j.amt) > 0)) return;
+      if (j.cr === 'CAPITAL' && num(j.rate) > 0) ev.push({ d: j.date, pr: 0, run: () => step(j.cur, num(j.amt), num(j.rate)) });
+      else if (j.dr === 'CAPITAL' && this.S.jv.some(x => x.cur === j.cur && x.cr === 'CAPITAL' && num(x.rate) > 0))
+        ev.push({ d: j.date, pr: 2, run: () => step(j.cur, -num(j.amt), g(j.cur).a) });
+    });
     ev.sort((x, y) => x.d < y.d ? -1 : x.d > y.d ? 1 : x.pr - y.pr).forEach(e => e.run());
     const out: Record<string, number> = {};
     Object.keys(st).forEach(c => out[c] = st[c].a);
@@ -200,7 +211,7 @@ export class Engine {
       Object.keys(A).forEach(a => { const t = this.accType(a); if (t === 'capital') cap -= A[a]; else if (t !== 'expense') net += A[a]; });
       if (Math.abs(net) < 0.004 && Math.abs(cap) < 0.004) return;
       const rate = this.curRate(c);
-      res.parts.push({ cur: c, net, rate, inBase: net * rate }); res.cap += cap * rate;
+      res.parts.push({ cur: c, net, rate, inBase: net * rate }); res.cap += c === this.S.base ? cap : this.capInBase(c, rate);
     });
     res.value = res.parts.reduce((x, p) => x + p.inBase, 0); res.total = res.value - res.cap;
     return res;
@@ -210,9 +221,53 @@ export class Engine {
     Object.keys(B).forEach(c => {
       const A = B[c]; let net = 0, cap = 0;
       Object.keys(A).forEach(a => { const t = this.accType(a); if (t === 'capital') cap -= A[a]; else if (t !== 'expense') net += A[a]; });
-      tot += (net - cap) * (c === this.S.base ? 1 : this.costRate(c, d));
+      if (c === this.S.base) tot += net - cap;
+      else { const r = this.costRate(c, d); tot += net * r - this.capInBase(c, r, d); }
     });
     return tot;
+  }
+  /** Capital in a foreign currency, in rupees. Opening stock put in with a cost rate counts at that rate (what the owner really
+   *  put in); capital taken out after that leaves at the average cost of its day. Capital without a rate counts at `rate`
+   *  (the currency's rate now – that currency is also in what we hold, so it makes no profit either way). */
+  private capInBase(c: string, rate: number, to?: string) {
+    const isCap = (a: string) => this.accType(a) === 'capital';
+    const rated = this.S.jv.some(j => j.cur === c && isCap(j.cr) && num(j.rate) > 0);
+    let inr = 0, plain = 0;
+    this.S.jv.forEach(j => {
+      if (j.cur !== c || (to && j.date > to)) return;
+      const a = num(j.amt);
+      if (isCap(j.cr) && !isCap(j.dr)) { if (num(j.rate) > 0) inr += a * num(j.rate); else plain += a; }
+      else if (isCap(j.dr) && !isCap(j.cr)) { if (rated) inr -= a * this.costRate(c, j.date); else plain -= a; }
+    });
+    return inr + plain * rate;
+  }
+
+  /* ---------- checks before money is saved ---------- */
+  /** Earlier entries that look like this same payment: same person, currency and amount (₹1 / 1 unit either way), money going
+   *  the same way (toPerson = we give it to them), within 3 days. From a bill's Pay / Receive: Cash Book lines are looked at.
+   *  From the Cash Book: bill Pay / Receive and other Cash Book lines are looked at. skipId = the entry being changed. */
+  similarPays(person: string, cur: string, amt: number, toPerson: boolean, date: string, from: 'bill' | 'cashbook', skipId?: string): string[] {
+    const p = U(person), day = (s: string) => Date.parse(s) / 86400000;
+    if (!p || !(amt > 0) || p === 'CAPITAL') return [];
+    return this.S.jv.filter(j => j.id !== skipId && j.cur === cur && Math.abs(num(j.amt) - amt) < 1 && !j.link?.comm
+        && (toPerson ? j.dr === p : j.cr === p) && (from === 'cashbook' || !j.link) && Math.abs(day(j.date) - day(date || j.date)) <= 3)
+      .map(j => {
+        const sym = cur === this.S.base ? '₹' : cur + ' ';
+        const what = j.link ? 'Bill ' + (this.S.bills.find(b => b.id === j.link!.bill)?.no || '?') + (toPerson ? ' Pay' : ' Receive') : 'Voucher ' + (j.vno || j.no);
+        return `⚠️ <b>Already ${toPerson ? 'paid' : 'received'}?</b> ${what} on ${dmy(j.date)} ${toPerson ? 'gave' : 'got'} ${sym}${m(num(j.amt))} `
+          + `${toPerson ? 'to' : 'from'} <b>${p}</b>. Saving this ${toPerson ? 'pays' : 'counts'} it a second time.`;
+      });
+  }
+  /** Paying a foreign currency (SGD, USDT…) out of our Cash / Hand loan / Bank / stock company that does not hold enough of it.
+   *  extra = what lines not saved yet already add / take (several lines in one voucher). Rupees are not checked – rupee cash
+   *  going minus only means the starting money (capital) is not entered. */
+  shortOf(place: string, cur: string, amt: number, extra = 0): string {
+    const p = U(place);
+    if (!p || cur === this.S.base || !['cash', 'bank', 'stock'].includes(this.accType(p))) return '';
+    const have = r2(((this.balances()[cur] || {})[p] || 0) + extra);
+    if (have - amt > -0.005) return '';
+    return `⚠️ <b>${p}</b> has only ${cur} ${m(have)} – paying ${cur} ${m(amt)} makes it <b>${cur} ${m(have - amt)}</b>. `
+      + `Check where the ${cur} is paid from.`;
   }
 
   /** Bill lines booked to this account (in this currency) that are not fully paid yet. */

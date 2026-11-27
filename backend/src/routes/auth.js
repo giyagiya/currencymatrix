@@ -1,6 +1,6 @@
 const r = require('express').Router();
 const { pool, tx } = require('../db');
-const { sign, requireAuth, bcrypt } = require('../auth');
+const { sign, requireAuth, bcrypt, pinCheck, pinFailed, pinOk } = require('../auth');
 const { U, bad, HttpError } = require('../util');
 const { loadBook } = require('../book');
 
@@ -26,10 +26,12 @@ r.post('/auth/setup', async (req, res) => {
 });
 
 r.post('/auth/login', async (req, res) => {
-  const name = U(req.body.name), pin = String(req.body.pin || '');
+  const name = U(req.body.name), pin = String(req.body.pin || ''), key = 'login:' + name;
+  pinCheck(key);   // 5 wrong PINs → wait 5 minutes
   const { rows } = await pool.query('SELECT id,name,role,pages,pin_hash FROM users WHERE name=$1', [name]);
   const u = rows[0];
-  if (!u || !(await bcrypt.compare(pin, u.pin_hash))) throw new HttpError(401, 'Wrong PIN');
+  if (!u || !(await bcrypt.compare(pin, u.pin_hash))) throw pinFailed(key, 'Wrong PIN');
+  pinOk(key);
   delete u.pin_hash;
   res.json({ token: sign(u), user: u });
 });

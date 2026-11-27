@@ -22,6 +22,8 @@ export interface Jv {
   desc: string; dr: string; cr: string; cur: string; amt: number;
   note: string; mode: string; bank: string; dealer?: string; person?: string; ref?: string;
   link?: JvLink;
+  /** opening stock: capital put in as a foreign currency keeps its cost in rupees per unit (e.g. SGD 50,000 @ 80) */
+  rate?: number;
 }
 
 export interface UserRow { id: number; name: string; role: Role; pages: Page[]; }

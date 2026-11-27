@@ -32,6 +32,7 @@ async function loadBook(db = pool, user = null) {
   S.jv = jv.rows.map(j => {
     const o = { id: j.id, no: j.no, vno: j.vno, date: j.date, type: j.type, desc: j.descr, dr: j.dr, cr: j.cr, cur: j.cur, amt: num(j.amt), note: j.note, mode: j.mode, bank: j.bank, person: j.person, ref: j.ref };
     if (j.dealer) o.dealer = j.dealer;
+    if (num(j.rate)) o.rate = num(j.rate);   // opening stock: cost rate of capital put in as a foreign currency
     if (j.link_bill) o.link = j.link_comm ? { bill: j.link_bill, line: j.link_line, comm: true } : { bill: j.link_bill, line: j.link_line };
     return o;
   });
@@ -95,11 +96,13 @@ function checkJv(j) {
 // Insert one jv record (already validated)
 async function insertJv(db, j, who) {
   checkJv(j);
-  await db.query(`INSERT INTO jv(id,no,vno,date,type,descr,dr,cr,cur,amt,note,mode,bank,dealer,person,ref,link_bill,link_line,link_comm,created_by)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+  const rate = num(j.rate);
+  if (rate < 0) throw bad('Rate can not be below 0');
+  await db.query(`INSERT INTO jv(id,no,vno,date,type,descr,dr,cr,cur,amt,note,mode,bank,dealer,person,ref,link_bill,link_line,link_comm,created_by,rate)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
     [j.id, j.no, String(j.vno || ''), j.date, j.type || 'out', U(j.desc), U(j.dr), U(j.cr), U(j.cur), Math.round(num(j.amt) * 100) / 100,
       j.note || '', j.mode || '', U(j.bank), U(j.dealer), U(j.person), j.ref || '',
-      j.link ? j.link.bill : null, j.link ? j.link.line : null, !!(j.link && j.link.comm), who]);
+      j.link ? j.link.bill : null, j.link ? j.link.line : null, !!(j.link && j.link.comm), who, rate]);
 }
 
 async function audit(db, who, action, detail) {

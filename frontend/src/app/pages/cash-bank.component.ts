@@ -33,7 +33,8 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
   date = today(); vno = ''; cur = '';
   rows: VLine[] = [this.empty()];
   RF: 'all' | 'vouchers' | 'bills' = 'all';
-  cap: { dir: 'in' | 'out'; date: string; cur: string; amt: string; mode: CbMode; bank: string; note: string } | null = null;
+  /** Add / take out capital. mode 'stock' = into / from the currency's stock company; rate = opening stock cost (₹ per 1 unit) */
+  cap: { dir: 'in' | 'out'; date: string; cur: string; amt: string; mode: CbMode | 'stock'; bank: string; note: string; rate: string } | null = null;
   private scrolled = 0;
 
   constructor() { this.cur = this.S().base; this.vno = String(this.E().nextVno()); }
@@ -227,7 +228,7 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
       this.ui.toast('Add at least one line'); return false;
     }
     for (const y of [...ED, ...LL]) { const err = this.lineError(y); if (err) { this.ui.toast('Line ' + (this.rows.indexOf(y) + 1) + ': ' + err); return false; } }
-    const lines = [...this.billWarnings([...ED, ...LL]), ...ED.map(x => '✏️ Change line ' + (this.rows.indexOf(x) + 1) + ': ' + this.sentence(x)), ...LL.map(x => this.sentence(x))];
+    const lines = [...this.billWarnings([...ED, ...LL]), ...this.moneyWarnings([...ED, ...LL]), ...ED.map(x => '✏️ Change line ' + (this.rows.indexOf(x) + 1) + ': ' + this.sentence(x)), ...LL.map(x => this.sentence(x))];
     if (!(await this.ui.confirm('Please check – Voucher ' + this.vno + ' (' + this.cur + ')', lines))) return false;
     for (const x of ED) if (!(await this.updateLine(x))) return false;
     if (LL.length) {
@@ -293,12 +294,12 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
     this.asking = true;
     try {
       if (x.editing) {                                                    // a saved line that was changed → update it
-        const ok = await this.ui.confirm('Update line ' + no + '? – Voucher ' + this.vno + ' (' + this.cur + ')', [...this.billWarnings([x]), this.sentence(x)], '✅ Yes, update');
+        const ok = await this.ui.confirm('Update line ' + no + '? – Voucher ' + this.vno + ' (' + this.cur + ')', [...this.billWarnings([x]), ...this.moneyWarnings([x]), this.sentence(x)], '✅ Yes, update');
         if (!ok || !(await this.updateLine(x, '✓ Line ' + no + ' updated'))) { this.focusRow(x); return; }
         this.focusRow(this.rows.find(r => !this.locked(r) && r !== x) || this.rows[this.rows.length - 1]);
         return;
       }
-      const ok = await this.ui.confirm('Save line ' + no + '? – Voucher ' + this.vno + ' (' + this.cur + ')', [...this.billWarnings([x]), this.sentence(x)]);
+      const ok = await this.ui.confirm('Save line ' + no + '? – Voucher ' + this.vno + ' (' + this.cur + ')', [...this.billWarnings([x]), ...this.moneyWarnings([x]), this.sentence(x)]);
       if (!ok) { this.focusRow(x); return; }                              // ✏️ Go back → edit this row
       const accounts: any[] = [];
       const r = await this.store.save('post', '/jv', { entries: [this.toEntry(x, this.date, this.vno, this.cur, accounts)], accounts }, '✓ Line ' + no + ' saved');
@@ -334,15 +335,42 @@ export class CashBankComponent implements AfterViewChecked, AfterViewInit {
     });
   }
 
-  /* capital */
-  openCap() { this.cap = { dir: 'in', date: today(), cur: this.S().base, amt: '', mode: 'cash', bank: 'BANK', note: '' }; setTimeout(() => document.getElementById('cap-amt')?.focus(), 40); }
+  /** Before a line is saved: the same money already entered (bill Pay / Receive or another Cash Book line), and paying a
+   *  foreign currency out of a Cash / Bank / stock place that does not hold enough. Several lines count one after another;
+   *  a saved line being changed counts without its saved version. */
+  moneyWarnings(LL: VLine[]): string[] {
+    const E = this.E(), out: string[] = [], run: Record<string, number> = {};
+    const mv = (a: string, v: number) => { run[a] = (run[a] || 0) + v; };
+    LL.forEach(x => {
+      const old = this.orig(x);
+      if (old) { const o = this.toEntry(old, this.date, this.vno, this.cur, []); mv(o.cr, o.amt); mv(o.dr, -o.amt); }
+      const e = this.toEntry(x, this.date, this.vno, this.cur, []);
+      const short = E.shortOf(e.cr, this.cur, e.amt, run[e.cr] || 0); if (short) out.push(short);
+      mv(e.cr, -e.amt); mv(e.dr, e.amt);
+      const d = U(x.desc), person = this.dir(x) === 'exp' ? '' : e.dr === d ? d : e.cr === d ? d : '';
+      if (person) out.push(...E.similarPays(person, this.cur, e.amt, e.dr === person, this.date, 'cashbook', x.jid));
+    });
+    return [...new Set(out)];
+  }
+
+  /* capital – also opening stock: a foreign currency you already hold, put into its stock company with what it cost you */
+  /** the stock company kept for a currency in Setup → Stock for each currency ('' = none) */
+  stockPlace(cur: string) { return U((this.S().stockOf || {})[cur] || ''); }
+  openCap() { this.cap = { dir: 'in', date: today(), cur: this.S().base, amt: '', mode: 'cash', bank: 'BANK', note: '', rate: '' }; setTimeout(() => document.getElementById('cap-amt')?.focus(), 40); }
+  /** another currency picked: its own stock company (if any) is offered; rupees cannot go to a stock company */
+  capCurChanged(c: string) { if (this.cap && this.cap.mode === 'stock' && (c === this.S().base || !this.stockPlace(c))) this.cap.mode = 'cash'; }
+  /** a cost rate to start from: the currency's average cost so far, or else its last purchase rate */
+  capRateHint(cur: string) { const E = this.E(); return +(E.costRate(cur) || E.lastPRate(cur) || 0).toFixed(4); }
   async saveCap() {
-    const c = this.cap!; if (!(num(c.amt) > 0)) { this.ui.toast('Enter the capital amount'); return; }
-    const acc = this.modeAcc(c.mode, c.bank);
+    const c = this.cap!, base = this.S().base; if (!(num(c.amt) > 0)) { this.ui.toast('Enter the capital amount'); return; }
+    const foreign = c.cur !== base, rate = foreign && c.dir === 'in' ? num(c.rate) : 0;
+    if (foreign && c.dir === 'in' && !(rate > 0)) { this.ui.toast('Enter the cost rate – what 1 ' + c.cur + ' cost you in ' + base); return; }
+    const stock = c.mode === 'stock', acc = stock ? this.stockPlace(c.cur) : this.modeAcc(c.mode as CbMode, c.bank);
+    if (!acc) { this.ui.toast('No stock company for ' + c.cur + ' – set it in Setup → Stock for each currency'); return; }
     const e = { date: c.date, vno: String(this.E().nextVno()), type: c.dir, desc: 'CAPITAL', dr: c.dir === 'in' ? acc : 'CAPITAL', cr: c.dir === 'in' ? 'CAPITAL' : acc,
-      cur: c.cur, amt: r2(num(c.amt)), note: U(c.note), mode: c.mode, bank: c.mode === 'bank' ? acc : '' };
-    const r = await this.store.save('post', '/jv', { entries: [e], accounts: [{ name: 'CAPITAL', type: 'capital' }, { name: acc, type: c.mode === 'bank' ? 'bank' : 'cash' }] },
-      '✓ Capital ' + (c.dir === 'in' ? 'added' : 'taken out') + ': ' + c.cur + ' ' + m(num(c.amt)));
+      cur: c.cur, amt: r2(num(c.amt)), note: U(c.note) || (rate ? 'Opening stock @ ' + rate : ''), mode: stock ? '' : c.mode, bank: c.mode === 'bank' ? acc : '', rate };
+    const r = await this.store.save('post', '/jv', { entries: [e], accounts: [{ name: 'CAPITAL', type: 'capital' }, { name: acc, type: stock ? 'stock' : c.mode === 'bank' ? 'bank' : 'cash' }] },
+      '✓ Capital ' + (c.dir === 'in' ? 'added' : 'taken out') + ': ' + c.cur + ' ' + m(num(c.amt)) + (rate ? ' @ ' + rate : ''));
     if (r) { this.cap = null; this.vno = String(this.E().nextVno()); }
   }
 

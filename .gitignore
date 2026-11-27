@@ -3,3 +3,5 @@ dist/
 .angular/
 backend/.env
 *.log
+# daily backups hold your real data – never commit them
+backend/backups/

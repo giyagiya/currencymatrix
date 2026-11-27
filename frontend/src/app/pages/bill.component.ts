@@ -23,7 +23,7 @@ interface PayForm { date: string; amt: string; mode: PayMode; bank: string; deal
 })
 export class BillComponent implements AfterViewInit {
   store = inject(StoreService); auth = inject(AuthService); ui = inject(UiService);
-  m = m; num = num; dmy = dmy; PMODES = PMODES; MIC = MIC; modes: PayMode[] = ['bank', 'shop', 'home'];
+  m = m; num = num; dmy = dmy; PMODES = PMODES; MIC = MIC; modes: PayMode[] = ['shop', 'bank', 'home'];   // Shop cash first
   E = computed(() => this.store.engine()!);
   S = computed(() => this.store.book()!);
 
@@ -44,12 +44,13 @@ export class BillComponent implements AfterViewInit {
 
   constructor() { this.no = String(this.E().nextBillNo()); }
 
-  /** A new row copies type, currency, price-in, pay-by, bank and dealer from the row above. Stock always starts empty – pick one only when needed. */
+  /** A new row copies type, currency, price-in, pay-by, bank and dealer from the row above (the first row: Shop cash).
+   *  Stock always starts empty – pick one only when needed. */
   newLine(p?: Line): Line {
     const S = this.store.book()!;
     const c = p?.cur || this.E().allCurs().find(x => x !== S.base) || 'USD';   // first currency in the fixed order (SGD)
     return { desc: '', phone: '', side: p?.side || 'p', cur: c, base: p?.base || S.base, qty: '', rate: '', inv: '', stock: '',
-      mode: p?.mode || S.lastMode || 'bank', bank: p?.bank || 'BANK', dealer: p?.dealer || '', comm: '' };
+      mode: p?.mode || 'shop', bank: p?.bank || 'BANK', dealer: p?.dealer || '', comm: '' };   // a new bill starts on Shop cash
   }
   /** Stock drop-down: every stock account, any name kept in Setup → Stock for each currency, and any name that holds a
    *  foreign currency right now (e.g. KUMAR keeping SGD) – so a sale can be made FROM it. */
@@ -71,6 +72,8 @@ export class BillComponent implements AfterViewInit {
   /** "1 SGD = 83 INR" typed for a line priced in SGD → rate per INR kept to 12 decimals (1 crore INR → SGD 1,20,481.93, exact to the cent) */
   invChanged(l: Line) { const v = num(l.inv); l.rate = v ? String(+(1 / v).toFixed(12)) : ''; }
   lineAmt(l: Line) { return num(l.qty) * num(l.rate); }
+  /** ₹ for rupees, otherwise the currency code (a line priced in SGD shows "SGD 1,250.00") */
+  symOf(c?: string) { return !c || c === this.S().base ? '₹' : c + ' '; }
   lineComm(l: Line) { return r2(this.lineAmt(l) * num(l.comm) / 100000); }
   lastRate(l: Line) { return this.E().lastRate(l.cur, l.base); }
   isNewBank(n: string) { n = U(n); return !!n && n !== 'BANK' && !this.S().banks.some(b => b.name === n); }
@@ -199,8 +202,9 @@ export class BillComponent implements AfterViewInit {
     return 'by Shop cash';
   }
   sentence(l: Line) {
-    const amt = '₹' + m(this.lineAmt(l)), q = l.cur + ' ' + m(num(l.qty)), r = this.E().rateShort(l.cur, num(l.rate)),
-      c = num(l.comm) ? ' · commission ₹' + m(this.lineComm(l)) : '', ac = l.desc,   // rupees are always with the party
+    const amt = this.symOf(l.base) + m(this.lineAmt(l)), q = l.cur + ' ' + m(num(l.qty)), r = this.E().rateShort(l.cur, num(l.rate)),
+      c = num(l.comm) ? ' · commission ' + this.symOf(l.base) + m(this.lineComm(l)) : '',
+      ac = l.desc,   // the price is always with the party
       st = U(l.stock) && U(l.stock) !== U(l.desc) ? (l.side === 'p' ? ` · ${l.cur} kept at <b>${U(l.stock)}</b>` : ` · ${l.cur} given from <b>${U(l.stock)}</b>`) : '';
     return l.side === 'p'
       ? `We <b>BUY</b> ${q} from <b>${l.desc}</b> ${r} → we must <b>PAY</b> <b>${ac}</b> ${amt} ${this.payTxt(l)}${c}${st}`
@@ -280,7 +284,8 @@ export class BillComponent implements AfterViewInit {
   newBill() {
     const last = this.rows.filter(l => this.filled(l)).pop() || this.rows[this.rows.length - 1];
     if (this.editId) this.date = today();   // leaving an old bill → new bills start today, not on the old bill's date
-    this.editId = null; this.building = false; this.rows = [this.newLine(last)]; this.no = String(this.E().nextBillNo()); this.focusParty();
+    // the next bill keeps the last line's type and currency, but always starts on Shop cash
+    this.editId = null; this.building = false; this.rows = [{ ...this.newLine(last), mode: 'shop', bank: 'BANK', dealer: '' }]; this.no = String(this.E().nextBillNo()); this.focusParty();
   }
 
   /** Type an earlier Bill No. → that bill opens for editing (same as ✏️ Edit).
@@ -377,9 +382,10 @@ export class BillComponent implements AfterViewInit {
   }
   async confirmPay(b: Bill, i: number) {
     const P = this.PY!, r = b.rows[i], sd = this.E().rowSide(r), amt = num(P.amt), cm = num(P.comm), bookTo = this.E().rowAcct(r);
+    const cur = r.base || this.S().base, sym = cur === this.S().base ? '₹' : cur + ' ';   // a line priced in SGD is paid in SGD
     if (!(amt > 0)) { this.ui.toast('Enter amount'); return; }
     const ls = this.E().lineState(b, i), left = r2(ls.due - amt);
-    if (left <= -1) { this.ui.toast('Only ₹' + m(ls.due) + ' is pending on this line'); return; }
+    if (left <= -1) { this.ui.toast('Only ' + sym + m(ls.due) + ' is pending on this line'); return; }
     const banks: any[] = [], dealers: any[] = [], accounts: any[] = [];
     let ac = 'CASH', accType = 'cash';
     if (P.mode === 'bank') {
@@ -394,9 +400,13 @@ export class BillComponent implements AfterViewInit {
     accounts.push({ name: ac, type: accType });
     const bk = P.mode === 'bank' ? this.E().bankBy(ac) : undefined, who = U(P.person);
     const note = 'Bill ' + b.no + ' · ' + PMODES[P.mode] + (accType === 'dealer' ? ' · dealer ' + ac : '') + (bk ? ' · ' + bk.name + (bk.acno ? ' ' + last4(bk.acno) : '') : '') + (who ? ' · ' + who : '') + (P.ref ? ' · Ref ' + P.ref : '');
-    const ok = await this.ui.confirm('Please check', [(sd === 'p' ? 'We <b>PAY</b> ' : 'We <b>GET</b> ') + '₹' + m(amt) + (sd === 'p' ? ' to <b>' : ' from <b>') + bookTo + '</b> ' + this.payTxt({ ...P, bank: ac, dealer: accType === 'dealer' ? ac : '' })
-      + (cm ? ' · commission ₹' + m(r2(amt * cm / 100000)) : '')
-      + (left >= 1 ? ' · <b>₹' + m(left) + ' will still be pending</b>' : '')]);
+    // warnings: the same money already entered in the Cash Book · paying a foreign currency the place does not hold
+    const E = this.E(), commAmt = cm ? r2(amt * cm / 100000) : 0;
+    const warn = [...E.similarPays(bookTo, cur, amt, sd === 'p', P.date || today(), 'bill'),
+      ...(sd === 'p' && accType !== 'dealer' ? [E.shortOf(ac, cur, amt + commAmt)] : [])].filter(Boolean);
+    const ok = await this.ui.confirm('Please check', [...warn, (sd === 'p' ? 'We <b>PAY</b> ' : 'We <b>GET</b> ') + sym + m(amt) + (sd === 'p' ? ' to <b>' : ' from <b>') + bookTo + '</b> ' + this.payTxt({ ...P, bank: ac, dealer: accType === 'dealer' ? ac : '' })
+      + (cm ? ' · commission ' + sym + m(commAmt) : '')
+      + (left >= 1 ? ' · <b>' + sym + m(left) + ' will still be pending</b>' : '')]);
     if (!ok) return;
     const pay: any = { date: P.date || today(), type: sd === 'p' ? 'payment' : 'receipt', desc: '', dr: sd === 'p' ? bookTo : ac, cr: sd === 'p' ? ac : bookTo,
       cur: r.base || this.S().base, amt: r2(amt), note, mode: P.mode, bank: bk ? bk.name : '', dealer: accType === 'dealer' ? ac : '', person: who, ref: P.ref, link: { bill: b.id, line: i } };

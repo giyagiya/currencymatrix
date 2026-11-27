@@ -95,7 +95,7 @@
           <div class="bl-m"><b>{{ r.desc }}</b>
             <span class="rt" [class.rbp]="E().rowSide(r) === 'p'" [class.rbs]="E().rowSide(r) === 's'">{{ limited() ? 'To pay' : E().rowSide(r) === 'p' ? 'Purchase' : 'Sale' }}</span>
             <div class="sub">@if (!limited()) { {{ r.cur }} {{ m(r.qty) }} {{ E().rateShort(r.cur, E().rowRate(r)) }} · {{ r.stock ? r.stock + ' · ' : '' }} }{{ MIC[r.mode] }} {{ PMODES[r.mode] }}{{ r.dealer ? ' (' + r.dealer + ')' : '' }}{{ r.bank ? ' (' + r.bank + ')' : '' }}</div></div>
-          <div class="bl-a" [class.neg]="E().rowSide(r) === 'p'" [class.pos]="E().rowSide(r) === 's'">₹{{ m(E().rowAmt(r)) }}</div>
+          <div class="bl-a" [class.neg]="E().rowSide(r) === 'p'" [class.pos]="E().rowSide(r) === 's'">{{ symOf(r.base) }}{{ m(E().rowAmt(r)) }}</div>
           <div class="bl-b">
             @if (E().lineState(b, i); as ls) {
               @if (ls.st === 'paid') {
@@ -104,7 +104,7 @@
                 <button class="sm wa" (click)="openSend(b, i)" title="Send this bill on WhatsApp">📤 Send bill</button>
               } @else {
                 @if (ls.st === 'part') {
-                  <span class="chip part" [title]="E().paysOf(b.id, i).length + ' payment(s) so far'">Part {{ E().rowSide(r) === 'p' ? 'paid' : 'received' }} ₹{{ m(ls.paid) }} · ₹{{ m(ls.due) }} pending</span>
+                  <span class="chip part" [title]="E().paysOf(b.id, i).length + ' payment(s) so far'">Part {{ E().rowSide(r) === 'p' ? 'paid' : 'received' }} {{ symOf(r.base) }}{{ m(ls.paid) }} · {{ symOf(r.base) }}{{ m(ls.due) }} pending</span>
                   @if (!limited()) { <button class="sm" (click)="unpay(b, i)" title="Back to pending">↩</button> }
                 }
                 <button class="sm" [class.paybtn]="E().rowSide(r) === 'p'" [class.recvbtn]="E().rowSide(r) === 's'" (click)="openPay(b, i)">{{ E().rowSide(r) === 'p' ? '💸 Pay' : '💰 Receive' }}</button>

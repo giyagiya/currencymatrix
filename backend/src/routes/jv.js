@@ -28,7 +28,7 @@ r.post('/jv', async (req, res) => {
     for (const e of entries) {
       if (!isDate(e.date)) throw bad('Enter a valid date');
       if (e.link && e.link.bill) {
-        const line = (await db.query('SELECT qty,prate,srate FROM bill_rows WHERE bill_id=$1 AND line=$2', [e.link.bill, e.link.line])).rows[0];
+        const line = (await db.query('SELECT qty,prate,srate,base FROM bill_rows WHERE bill_id=$1 AND line=$2', [e.link.bill, e.link.line])).rows[0];
         if (!line) throw bad('Bill line not found – refresh and try again');
         if (!e.link.comm) {
           // a line may be paid in parts; refuse only when nothing is left or the amount is more than what is pending (₹1 rounding allowed)
@@ -36,7 +36,8 @@ r.post('/jv', async (req, res) => {
           const paid = num((await db.query('SELECT COALESCE(SUM(amt),0) AS s FROM jv WHERE link_bill=$1 AND link_line=$2 AND NOT link_comm', [e.link.bill, e.link.line])).rows[0].s);
           const due = r2(Math.max(0, lineAmt - paid));
           if (due < 1) throw bad('This bill line is already paid');
-          if (r2(num(e.amt)) - due >= 1) throw bad('Only ₹' + due.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ' is pending on this bill line');
+          const sym = !line.base || line.base === 'INR' ? '₹' : line.base + ' ';   // a line priced in SGD shows SGD
+          if (r2(num(e.amt)) - due >= 1) throw bad('Only ' + sym + due.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ' is pending on this bill line');
         }
       }
       for (const a of [e.dr, e.cr]) await ensureAccounts(db, [{ name: a, type: 'party' }]);

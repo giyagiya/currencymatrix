@@ -73,12 +73,25 @@ Set `CORS_ORIGIN` in `.env` to your site address, e.g. `https://remit.yourshop.i
 
 Other options: **Render / Railway** (Web Service: build `cd backend && npm install && cd ../frontend && npm install && npx ng build`, start `node backend/src/server.js`, add a PostgreSQL database and copy its URL into `DATABASE_URL`).
 
+## 7. Daily backup
+`npm run backup` (in `backend`) saves everything – bills, vouchers, payments, names, settings – to
+`backend/backups/remit-backup-YYYY-MM-DD.json` (or the folder in `BACKUP_DIR` in `.env`). It is the same file as
+Setup → Backup, so **Setup → Import backup** loads it back. The newest 60 are kept. Logins / PINs are not in it.
+The `backups` folder holds your real data and is never committed to git.
+
+Run it every day by itself (Windows, once in a Command Prompt – change the folder if yours is different):
+```
+schtasks /Create /SC DAILY /ST 21:00 /TN "Remit daily backup" /TR "cmd /c cd /d D:\currency\currencymatrix\backend && npm run backup"
+```
+Copy the `backups` folder to a pen drive or cloud drive now and then – a backup on the same disk does not help if that disk fails.
+
 ## Security
 * PINs and the delete password are stored **hashed (bcrypt)**; logins use signed tokens (JWT, 12 h).
+* **5 wrong PINs** for a login (or 5 wrong delete passwords) lock it for 5 minutes.
 * Every page permission and the delete password are checked **on the server**, not only on screen.
 * Every delete, edit, rename and import is written to the `audit_log` table (who, when, what).
 * Always use HTTPS in production and keep `JWT_SECRET` secret.
-* Back up the database daily, e.g. `pg_dump remit > remit-$(date +%F).sql`.
+* Back up daily – see **7. Daily backup**.
 
 ## API (all under /api, JSON)
 | Method | Path | Who |

@@ -103,6 +103,9 @@ INSERT INTO settings(key,value) VALUES
  ('valRate','{}')
 ON CONFLICT (key) DO NOTHING;
 
+-- Opening stock: capital put in as a foreign currency (e.g. SGD 50,000 into MY SGD COMPANY) keeps its cost rate in rupees. Safe to run again.
+ALTER TABLE jv ADD COLUMN IF NOT EXISTS rate NUMERIC(24,12) NOT NULL DEFAULT 0;
+
 -- Rates keep 12 decimals (was 8) so "1 SGD = 83 INR" (0.012048192771 per INR) stays exact to the cent on big amounts. Safe to run again.
 ALTER TABLE bill_rows ALTER COLUMN prate TYPE NUMERIC(24,12);
 ALTER TABLE bill_rows ALTER COLUMN srate TYPE NUMERIC(24,12);
