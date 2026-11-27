@@ -17,10 +17,11 @@ import { m, num, today, U } from '../core/fmt';
       <div><label>As on date</label><input type="date" [(ngModel)]="f.to"></div>
       <div><label>Name</label><select [(ngModel)]="f.acct"><option value="">All names</option>@for (a of E().allAccounts(); track a) { <option [value]="a">{{ a }}</option> }</select></div>
       <div><label>Type</label><select [(ngModel)]="f.typ"><option value="all">All types</option><option value="party">Party</option><option value="dealer">Delivery dealer</option>
-        <option value="stock">Stock / wallet</option><option value="cb">Cash &amp; Bank</option><option value="expense">Expense</option><option value="capital">Capital</option></select></div>
+        <option value="stock">Stock / wallet</option><option value="cb">Cash &amp; Bank</option><option value="expense">Expense</option></select></div>
       <div><label>Currency</label><select [ngModel]="curNow()" (ngModelChange)="setCur($event)"><option value="all">All currencies</option>@for (c of shownCurs(); track c) { <option [value]="c">{{ c }}</option> }</select></div>
     </div>
-    <div class="hint">Shows the currencies you buy and sell{{ baseTraded() ? '' : ' (' + base() + ' shows only when a bill buys or sells ' + base() + ')' }}. Totals are worked out only for the names shown.{{ canLedger() ? ' Tap a name to open its ledger.' : '' }}</div>
+    <label class="ck nilck"><input type="checkbox" [ngModel]="f.nil" (ngModelChange)="setNil($event)"> Show settled names (NIL)</label>
+    <div class="hint">Each currency shows who holds it. {{ base() }}: your Cash, Bank and stock company (same as the Cash Book); what people owe or are owed in {{ base() }} is in the "to receive / to pay" box. Capital is in Total profit below. Totals are worked out only for the names shown.{{ canLedger() ? ' Tap a name to open its ledger.' : '' }}</div>
   </div>
 
   @if (blocks(); as blocks) {
@@ -34,7 +35,8 @@ import { m, num, today, U } from '../core/fmt';
           @for (r of b.rows; track r.a) {
             <tr><td class="l">@if (canLedger()) { <a class="acc" (click)="openLedger(r.a)">{{ r.a }}</a> } @else { <span class="acc0">{{ r.a }}</span> }
                 @if (r.t !== 'party') { <span class="tag">{{ TYPES[r.t] }}</span> }</td>
-              <td class="n">{{ r.b > 0 ? m(r.b) : '' }}</td><td class="n" [class.bs-cr]="r.b < 0">{{ r.b < 0 ? m(-r.b) : '' }}</td></tr>
+              @if (r.b) { <td class="n">{{ r.b > 0 ? m(r.b) : '' }}</td><td class="n" [class.bs-cr]="r.b < 0">{{ r.b < 0 ? m(-r.b) : '' }}</td> }
+              @else { <td class="nil" colspan="2">NIL</td> }</tr>
           }
           <tr class="bs-tot"><td></td><td class="n">{{ m(b.dr) }}</td><td class="n">{{ m(b.cr) }}</td></tr>
           <tr class="bs-s"><td class="l">Outstanding value</td><td class="n">{{ m(b.os) }}</td><td></td></tr>
@@ -52,20 +54,19 @@ import { m, num, today, U } from '../core/fmt';
 
   @for (d of dues(); track d.cur) {
     <div class="card"><h2 class="sech">{{ d.title }} to receive / to pay</h2>
-      <div class="dues">
-        @for (side of [{ h: 'To receive', l: d.rec, t: d.tr, cls: 'pos' }, { h: 'To pay', l: d.pay, t: d.tp, cls: 'neg' }]; track side.h) {
-          <div class="gridwrap"><table class="s grid">
-            <tr><th class="l">{{ side.h }}</th><th>{{ d.sym }}</th></tr>
-            @for (x of side.l; track x.a) {
-              <tr><td class="l">@if (canLedger()) { <a class="acc" (click)="openLedger(x.a)">{{ x.a }}</a> } @else { {{ x.a }} }</td><td class="n" [class.pos]="side.cls === 'pos'" [class.neg]="side.cls === 'neg'">{{ m(x.v) }}</td></tr>
-            } @empty { <tr><td class="l sub" colspan="2">Nothing</td></tr> }
-            <tr class="bs-tot"><td class="l">Total</td><td class="n">{{ m(side.t) }}</td></tr>
-          </table></div>
+      <div class="gridwrap"><table class="s grid bs">
+        <colgroup><col><col class="amt"><col class="amt"></colgroup>
+        <tr><th class="l">Name</th><th>To receive {{ d.sym }}</th><th>To pay {{ d.sym }}</th></tr>
+        @for (x of d.rows; track x.a) {
+          <tr><td class="l">@if (canLedger()) { <a class="acc" (click)="openLedger(x.a)">{{ x.a }}</a> } @else { {{ x.a }} }</td>
+            @if (x.v) { <td class="n pos">{{ x.v > 0 ? m(x.v) : '' }}</td><td class="n neg">{{ x.v < 0 ? m(-x.v) : '' }}</td> }
+            @else { <td class="nil" colspan="2">NIL</td> }</tr>
         }
-      </div>
+        <tr class="bs-tot"><td class="l">Total</td><td class="n">{{ m(d.tr) }}</td><td class="n">{{ m(d.tp) }}</td></tr>
+      </table></div>
       <div class="hint">{{ d.cur === base() ? 'Money still to come from, or to go to, each person – for bills and Cash Book lines.'
         : d.cur + ' still to come from, or to go to, each person – for bill lines priced in ' + d.cur + ' (e.g. ' + base() + ' bought for ' + d.cur + '). The ' + d.cur + ' block above shows only who holds ' + d.cur + '.' }}
-        Receive / Pay it in Bills &amp; payments; the name drops off once it is settled.</div>
+        Receive / Pay it in Bills &amp; payments; once it is settled the name shows NIL.</div>
     </div>
   }
 
@@ -125,18 +126,21 @@ export class BalanceComponent {
   m = m; TYPES = TYPES as Record<string, string>;
   E = computed(() => this.store.engine()!);
   /** cur: 'all' or one currency – the choice is remembered on this device */
-  f = { to: '', acct: '', typ: 'all', cur: (() => { try { return localStorage.getItem('remit.bsCur') || 'all'; } catch { return 'all'; } })() };
+  f = { to: '', acct: '', typ: 'all', cur: (() => { try { return localStorage.getItem('remit.bsCur') || 'all'; } catch { return 'all'; } })(),
+    /** nil: settled names stay in the list as NIL (like a calculator app) – off unless ticked on this device */
+    // (new key: a tick saved before the default became "unticked" is ignored, so every device starts unticked)
+    nil: (() => { try { return localStorage.getItem('remit.bsShowNil') === '1'; } catch { return false; } })() };
   setCur(c: string) { this.f.cur = c; try { localStorage.setItem('remit.bsCur', c); } catch {} }
+  setNil(v: boolean) { this.f.nil = v; try { localStorage.setItem('remit.bsShowNil', v ? '1' : '0'); } catch {} }
   tp = computed(() => this.E().totalProfit());
-  /** Rupees (the base currency) are shown only when a bill buys or sells rupees themselves (e.g. INR priced in SGD) – and then
-   *  only that traded INR (who holds it), never the rupees paid / received for SGD, USDT… */
-  baseTraded() { const base = this.base(); return this.E().S.bills.some(b => b.rows.some(r => r.cur === base)); }
-  shownCurs() { return this.E().allCurs().filter(c => c !== this.base() || this.baseTraded()); }
+  /** Every currency, rupees too: the INR block shows your own rupees (Cash, Bank, INR COMPANY) – the rupees people
+   *  owe / are owed for SGD, USDT… are in the "₹ Rupees to receive / to pay" box, not in the block. */
+  shownCurs() { return this.E().allCurs(); }
   /** the picked currency, or 'all' when that currency is not shown (e.g. an old INR choice) */
   curNow() { return this.shownCurs().includes(this.f.cur) ? this.f.cur : 'all'; }
   blocks(): SheetBlock[] {
     const show = new Set(this.shownCurs());
-    return this.E().sheetData({ ...this.f, cur: this.curNow(), stockOnly: true }).filter(b => show.has(b.cur));
+    return this.E().sheetData({ ...this.f, cur: this.curNow(), stockOnly: true, nil: this.f.nil }).filter(b => show.has(b.cur));
   }
   /** the rupee block (same date / name / type filters) – for the Convert box */
   baseBlock(): SheetBlock | undefined { return this.E().sheetData({ ...this.f, cur: this.base() })[0]; }
@@ -151,18 +155,26 @@ export class BalanceComponent {
   dues() {
     const base = this.base(), pick = this.curNow(), typ = this.f.typ;
     if (!['all', 'party', 'dealer'].includes(typ)) return [];
-    const E = this.E(), to = this.f.to || undefined, B = E.balances(to), q = U(this.f.acct);
+    const E = this.E(), S = E.S, to = this.f.to || undefined, B = E.balances(to), q = U(this.f.acct), inDate = (d: string) => !to || d <= to;
+    const person = (a: string) => { const t = E.accType(a); return (t === 'party' || t === 'dealer') && (typ === 'all' || t === typ) && (!q || a === q); };
     return E.curOrder(B).filter(c => B[c] && (pick === 'all' || c === pick)).map(c => {
-      const A = B[c], held = c === base ? E.baseStockBalances(to) : E.curStockBalances(c, to), due: { a: string; v: number }[] = [];
-      Object.keys(A).forEach(a => {
-        const t = E.accType(a), v = A[a] - (held[a] || 0);
-        if ((t === 'party' || t === 'dealer') && (typ === 'all' || t === typ) && (!q || a === q) && Math.abs(v) >= 0.005) due.push({ a, v });
-      });
-      const list = (sign: number) => due.filter(x => x.v * sign > 0).map(x => ({ a: x.a, v: Math.abs(x.v) })).sort((x, y) => y.v - x.v || x.a.localeCompare(y.a));
-      const rec = list(1), pay = list(-1);
-      return { cur: c, rec, pay, tr: rec.reduce((s, x) => s + x.v, 0), tp: pay.reduce((s, x) => s + x.v, 0),
+      const A = B[c], held = c === base ? E.baseStockBalances(to) : E.curStockBalances(c, to);
+      // who dealt on this side (they stay as NIL once settled): the party of every bill line priced in this currency, and for
+      // rupees, people in Cash Book lines that the INR block above does not show
+      const dealt = new Set<string>();
+      if (this.f.nil) {
+        S.bills.forEach(b => { if (inDate(b.date)) b.rows.forEach(r => { if (r.desc && num(r.qty) && (r.base || base) === c) dealt.add(E.rowAcct(r)); }); });
+        if (c === base) S.jv.forEach(j => { if (j.cur === base && !j.link && inDate(j.date)) [j.dr, j.cr].forEach(a => { if (!(a in held)) dealt.add(a); }); });
+      }
+      const all = Object.keys(A).filter(person).map(a => { const v = A[a] - (held[a] || 0); return { a, v: Math.abs(v) >= 0.005 ? v : 0 }; })
+        .filter(x => x.v !== 0 || dealt.has(x.a));
+      const list = (sign: number) => all.filter(x => x.v * sign > 0).map(x => ({ a: x.a, v: Math.abs(x.v) })).sort((x, y) => y.v - x.v || x.a.localeCompare(y.a));
+      const rec = list(1), pay = list(-1), nil = all.filter(x => !x.v).map(x => x.a).sort();
+      // one list for the page: to receive, then to pay, then the settled names (NIL)
+      const rows = [...rec, ...pay.map(x => ({ a: x.a, v: -x.v })), ...nil.map(a => ({ a, v: 0 }))];
+      return { cur: c, rec, pay, nil, rows, tr: rec.reduce((s, x) => s + x.v, 0), tp: pay.reduce((s, x) => s + x.v, 0),
         sym: c === 'INR' ? '₹' : c, title: c === 'INR' ? '₹ Rupees' : c };
-    }).filter(d => d.rec.length || d.pay.length);
+    }).filter(d => d.rows.length);
   }
 
   /** expenses per head (and a total per currency) */
@@ -199,7 +211,7 @@ export class BalanceComponent {
     const n = (v: number) => String(Math.round(v * 100) / 100 || 0);
     const out: unknown[][] = [['As on', this.f.to || today()], [], ['Currency', 'Name', 'Type', 'Debit', 'Credit']];
     this.blocks().forEach(b => {
-      b.rows.forEach(r => out.push([b.cur, r.a, this.TYPES[r.t], r.b > 0 ? n(r.b) : '', r.b < 0 ? n(-r.b) : '']));
+      b.rows.forEach(r => out.push([b.cur, r.a, this.TYPES[r.t], r.b > 0 ? n(r.b) : r.b ? '' : 'NIL', r.b < 0 ? n(-r.b) : '']));
       out.push([b.cur, 'TOTAL', '', n(b.dr), n(b.cr)]);
       ([['OUTSTANDING VALUE', b.os], ['CASH IN HAND VALUE (INCL. STOCK / WALLET)', b.cash], ['BANK VALUE', b.bank], ['TOTAL', b.total], ['CREDIT OUTSTANDING VALUE', b.cos],
         ['EXPENSES (ALREADY INCLUDED)', b.exp], ['NET TOTAL', b.net], ...(b.cap ? [['CAPITAL (YOUR MONEY)', b.cap]] : [])] as [string, number][])
@@ -209,6 +221,7 @@ export class BalanceComponent {
     this.dues().forEach(d => {   // to receive / to pay by person, per currency
       d.rec.forEach(x => out.push([d.cur, x.a, 'To receive', n(x.v), '']));
       d.pay.forEach(x => out.push([d.cur, x.a, 'To pay', '', n(x.v)]));
+      d.nil.forEach(a => out.push([d.cur, a, 'Settled', 'NIL', '']));
       out.push([d.cur, 'TOTAL TO RECEIVE / TO PAY', '', n(d.tr), n(d.tp)]);
       out.push([]);
     });

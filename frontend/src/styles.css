@@ -266,6 +266,6 @@ table.ulist select{min-width:132px}
 /* outlined red button (e.g. "Clear & open SGD" in the Cash Book currency switch) */
 button.odanger{background:#fff;color:var(--red);border-color:#fecdca}
 button.odanger:hover{background:#fef3f2}
-/* Balance sheet: rupees to receive / to pay – two lists side by side, one under the other on phones */
-.dues{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media (max-width:700px){.dues{grid-template-columns:1fr}}
+/* Balance sheet: a settled name shows NIL across Debit / Credit (or To receive / To pay) */
+table.s td.nil{text-align:center;color:var(--mut);font-weight:700;letter-spacing:.08em}
+.ck.nilck{margin-top:10px;color:var(--mut)}

@@ -35,7 +35,7 @@
             @else { <input disabled placeholder="—"> }</td>
           <td class="n"><input [(ngModel)]="x.comm" inputmode="decimal" placeholder="0"></td>
           @if (more) {
-            <td><input [(ngModel)]="x.stock" list="dl-stock" class="up" autocomplete="off" [placeholder]="x.side === 's' ? 'From (party)' : 'With party'"
+            <td><input [(ngModel)]="x.stock" [attr.list]="'dl-stock-' + x.cur + '-' + x.side" class="up" autocomplete="off" [placeholder]="x.side === 's' ? 'From (party)' : 'With party'"
               [class.newname]="isNewStock(x.stock)" [title]="isNewStock(x.stock) ? 'New stock – added when you save'
                 : x.side === 's' ? 'Whose hand the currency is given FROM (e.g. MY SGD COMPANY, KUMAR). Empty = the buyer\'s own account (we still owe it to them). Rupees always stay with the party.'
                 : 'Whose hand the bought currency is KEPT in (e.g. MY SGD COMPANY). Empty = it stays with the party. Rupees always stay with the party.'"></td>
@@ -168,4 +168,6 @@
 <datalist id="dl-acc">@for (a of E().allAccounts(); track a) { <option [value]="a"></option> }</datalist>
 <datalist id="dl-bank"><option value="BANK"></option>@for (b of S().banks; track b.name) { <option [value]="b.name"></option> }</datalist>
 <datalist id="dl-dealer">@for (d of S().dealers; track d.name) { <option [value]="d.name"></option> }</datalist>
-<datalist id="dl-stock">@for (s of stockNames(); track s) { <option [value]="s"></option> }</datalist>
+<!-- Stock suggestions per currency and side: Purchase = that currency's stock company; Sale = it + whoever holds that currency -->
+@for (c of E().allCurs(); track c) { @for (sd of ['p', 's']; track sd) {
+  <datalist [id]="'dl-stock-' + c + '-' + sd">@for (s of stockFor(c, sd); track s) { <option [value]="s"></option> }</datalist> } }

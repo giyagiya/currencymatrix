@@ -63,6 +63,22 @@ export class BillComponent implements AfterViewInit {
     }));
     return [...n].sort();
   });
+  /** Stock drop-down of one line – only names for the line's currency: its stock company (Setup → Stock for each currency, or a
+   *  stock account that keeps that currency, e.g. SGD → SGD COMPANY). On a Sale also the people holding that currency now
+   *  (e.g. KUMAR keeping our SGD), so it can be sold FROM them. Any other name can still be typed. */
+  stockLists = computed(() => {
+    const S = this.S(), E = this.E(), out: Record<string, string[]> = {};
+    E.allCurs().forEach(c => {
+      const co = new Set<string>(), so = U((S.stockOf || {})[c] || '');
+      if (so) co.add(so);
+      Object.keys(S.accounts).forEach(a => { if (E.accType(a) === 'stock' && E.stockCurs(a).includes(c)) co.add(a); });
+      const held = c === S.base ? E.baseStockBalances() : E.curStockBalances(c);   // who holds the currency (not what they owe)
+      const holders = Object.keys(held).filter(a => held[a] > 0.004 && ['party', 'dealer'].includes(E.accType(a)) && !co.has(a)).sort();
+      out[c + ':p'] = [...co].sort(); out[c + ':s'] = [...co].sort().concat(holders);
+    });
+    return out;
+  });
+  stockFor(cur: string, side: string) { return this.stockLists()[cur + ':' + side] || []; }
   /** a Stock name never used before (an existing name such as KUMAR is not new) */
   isNewStock(n: string) { n = U(n); return !!n && !this.S().accounts[n] && !this.stockNames().includes(n); }
   filled(l: Line) { return !!(U(l.desc) || num(l.qty) || num(l.rate)); }

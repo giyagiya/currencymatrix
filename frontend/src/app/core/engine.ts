@@ -9,7 +9,7 @@ import { r2, num, U, m, dmy } from './fmt';
 const BUILT_IN: Record<string, AccType> = { CASH: 'cash', 'HAND LOAN': 'cash', 'HAND CASH': 'cash', BANK: 'bank', CAPITAL: 'capital', EXPENSES: 'expense' };
 /** stockOnly: each currency block shows only who holds that currency – the price side of deals is left out
  *  (INR: baseStockBalances, others: curStockBalances) */
-export interface SheetFilter { to?: string; acct?: string; typ?: string; cur?: string; stockOnly?: boolean; }
+export interface SheetFilter { to?: string; acct?: string; typ?: string; cur?: string; stockOnly?: boolean; nil?: boolean; }
 export interface SheetRow { a: string; b: number; t: AccType; }
 export interface SheetBlock {
   cur: string; rows: SheetRow[]; dr: number; cr: number; os: number; cash: number; bank: number;
@@ -97,12 +97,22 @@ export class Engine {
     });
     return B;
   }
-  /** The base currency (INR) as a traded currency: who holds the INR bought / sold on bill lines whose Currency is INR
-   *  (e.g. INR priced in SGD, kept at INR COMPANY), and Cash Book INR moves of that INR between names (e.g. MOSI → INR COMPANY).
-   *  Rupees paid / received for SGD, MYR… (bill prices, Pay / Receive, capital, expenses) are left out.
-   *  A Cash Book INR line counts when one side already holds traded INR; the other side then holds it too
-   *  (cash / bank never pass it on, so ordinary rupee payments stay out). */
+  /** Who holds our rupees (the INR block of the Balance sheet):
+   *  · our own places – Cash, Hand loan, Bank, stock companies (INR COMPANY), Capital, Expenses – with their full rupee balance,
+   *    exactly as in the Cash Book (capital put in, Pay / Receive, expenses, rupees bought…);
+   *  · people only for INR bought / sold as a currency that is still in their hand (e.g. INR bought from MANALI, not yet handed
+   *    over). What people owe / are owed in rupees for SGD, MYR… is in the "₹ Rupees to receive / to pay" box instead. */
   baseStockBalances(to?: string): Record<string, number> {
+    const B = this.tradedBaseBalances(to), full = this.balances(to)[this.S.base] || {};
+    const own = (n: string) => !['party', 'dealer'].includes(this.accType(n));
+    Object.keys(B).forEach(a => { if (own(a)) delete B[a]; });
+    Object.keys(full).forEach(a => { if (own(a)) B[a] = full[a]; });
+    return B;
+  }
+  /** INR bought / sold as a traded currency only: who holds the INR of bill lines whose Currency is INR (e.g. INR priced in SGD,
+   *  kept at INR COMPANY), and Cash Book INR moves of that INR between names (e.g. MOSI → INR COMPANY). A Cash Book INR line
+   *  counts when one side already holds traded INR; the other side then holds it too (cash / bank never pass it on). */
+  tradedBaseBalances(to?: string): Record<string, number> {
     const S = this.S, base = S.base, B: Record<string, number> = {}, add = (a: string, v: number) => { B[a] = (B[a] || 0) + v; };
     const holders = new Set<string>(), so = U((S.stockOf || {})[base] || '');
     if (so) holders.add(so);
@@ -347,13 +357,20 @@ export class Engine {
   sheetData(f: SheetFilter = {}): SheetBlock[] {
     let B = this.balances(f.to); const out: SheetBlock[] = [], q = U(f.acct), typ = f.typ || 'all', curF = f.cur || 'all';
     if (f.stockOnly) B = Object.fromEntries(Object.keys(B).map(c => [c, c === this.S.base ? this.baseStockBalances(f.to) : this.curStockBalances(c, f.to)]));
-    const typOk = (a: string) => { const t = this.accType(a); return typ === 'all' || (typ === 'cb' ? (t === 'cash' || t === 'bank') : t === typ); };
+    const typOk = (a: string) => { const t = this.accType(a);
+      // the Balance sheet (stock view) shows who holds each currency – Capital is the owner's money, not a place that holds it
+      // (it is in the top strip, Total profit "Less capital" and Ledger → CAPITAL)
+      if (f.stockOnly && t === 'capital') return false;
+      return typ === 'all' || (typ === 'cb' ? (t === 'cash' || t === 'bank') : t === typ); };
     this.curOrder(B).forEach(c => {
       if (curF !== 'all' && curF !== c) return;
       const A = B[c] || {};
-      const rows = Object.keys(A).filter(a => Math.abs(A[a]) > 0.004 && (!q || a === q) && typOk(a)).map(a => ({ a, b: A[a], t: this.accType(a) }));
+      // nil: names that dealt in this currency but are settled stay in the list with 0 (shown as NIL), after the Dr and Cr names
+      const rows = Object.keys(A).filter(a => (f.nil || Math.abs(A[a]) > 0.004) && (!q || a === q) && typOk(a))
+        .map(a => ({ a, b: Math.abs(A[a]) > 0.004 ? A[a] : 0, t: this.accType(a) }));
       if (!rows.length) return;
-      rows.sort((x, y) => (Number(y.b > 0) - Number(x.b > 0)) || x.a.localeCompare(y.a));
+      const rank = (b: number) => b > 0 ? 0 : b < 0 ? 1 : 2;
+      rows.sort((x, y) => rank(x.b) - rank(y.b) || x.a.localeCompare(y.a));
       let dr = 0, cr = 0, os = 0, cash = 0, bank = 0, cos = 0, exp = 0, cap = 0;
       rows.forEach(r => {
         if (r.b > 0) dr += r.b; else cr -= r.b;
